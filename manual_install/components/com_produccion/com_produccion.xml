@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<extension type="component" method="upgrade">
+    <name>COM_PRODUCCION</name>
+    <author>Grimpsa</author>
+    <creationDate>2024-12-18</creationDate>
+    <copyright>Copyright (C) 2024 Grimpsa. All rights reserved.</copyright>
+    <license>GNU General Public License version 2 or later; see LICENSE.txt</license>
+    <authorEmail>info@grimpsa.com</authorEmail>
+    <authorUrl>https://grimpsa.com</authorUrl>
+    <version>1.0.44</version>
+    <description>COM_PRODUCCION_XML_DESCRIPTION</description>
+    
+    <files folder="site">
+        <filename>produccion.php</filename>
+        <folder>services</folder>
+        <folder>src</folder>
+        <folder>language</folder>
+    </files>
+    
+    <languages folder="site/language">
+        <language tag="en-GB">en-GB/com_produccion.ini</language>
+    </languages>
+</extension>
