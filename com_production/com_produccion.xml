@@ -23,7 +23,6 @@
         <folder>models</folder>
         <folder>services</folder>
         <folder>src</folder>
-        <folder>sql</folder>
         <folder>language</folder>
         <folder>tmpl</folder>
     </files>
