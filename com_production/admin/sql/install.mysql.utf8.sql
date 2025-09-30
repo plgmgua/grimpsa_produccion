@@ -1,5 +1,5 @@
 -- Create the main work orders table
-CREATE TABLE IF NOT EXISTS `#__produccion_ordenes` (
+CREATE TABLE IF NOT EXISTS `joomla_produccion_ordenes` (
     `id` int(11) NOT NULL AUTO_INCREMENT,
     `orden_de_trabajo` varchar(15) NOT NULL,
     `estado` enum('nueva','en_proceso','terminada','cerrada') DEFAULT 'nueva',
@@ -19,7 +19,7 @@ CREATE TABLE IF NOT EXISTS `#__produccion_ordenes` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Create the EAV table for order information (following your existing pattern)
-CREATE TABLE IF NOT EXISTS `#__produccion_ordenes_info` (
+CREATE TABLE IF NOT EXISTS `joomla_produccion_ordenes_info` (
     `id` int(11) NOT NULL AUTO_INCREMENT,
     `orden_id` char(5) NOT NULL,
     `tipo_de_campo` varchar(50) NOT NULL,
@@ -34,7 +34,7 @@ CREATE TABLE IF NOT EXISTS `#__produccion_ordenes_info` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Create table for daily attendance (for technician selection)
-CREATE TABLE IF NOT EXISTS `#__produccion_asistencia` (
+CREATE TABLE IF NOT EXISTS `joomla_produccion_asistencia` (
     `id` int(11) NOT NULL AUTO_INCREMENT,
     `personname` varchar(100) NOT NULL,
     `authdate` date NOT NULL,
@@ -46,7 +46,7 @@ CREATE TABLE IF NOT EXISTS `#__produccion_asistencia` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Create table for webhook logs
-CREATE TABLE IF NOT EXISTS `#__produccion_webhook_logs` (
+CREATE TABLE IF NOT EXISTS `joomla_produccion_webhook_logs` (
     `id` int(11) NOT NULL AUTO_INCREMENT,
     `webhook_type` varchar(50) NOT NULL,
     `orden_id` varchar(15) DEFAULT NULL,
@@ -62,7 +62,7 @@ CREATE TABLE IF NOT EXISTS `#__produccion_webhook_logs` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Create configuration table
-CREATE TABLE IF NOT EXISTS `#__produccion_config` (
+CREATE TABLE IF NOT EXISTS `joomla_produccion_config` (
     `id` int(11) NOT NULL AUTO_INCREMENT,
     `param` varchar(100) NOT NULL,
     `value` text,
@@ -73,7 +73,7 @@ CREATE TABLE IF NOT EXISTS `#__produccion_config` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Insert default configuration
-INSERT INTO `#__produccion_config` (`param`, `value`) VALUES
+INSERT INTO `joomla_produccion_config` (`param`, `value`) VALUES
 ('webhook_secret', ''),
 ('webhook_enabled', '1'),
 ('webhook_url', ''),
