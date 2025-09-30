@@ -1,7 +1,7 @@
 <?php
 /**
- * Update Webhook View
- * Creates an enhanced webhook configuration view
+ * Update Webhook Integration
+ * Integrates webhook into component URL structure
  */
 
 header('Content-Type: text/html; charset=utf-8');
@@ -9,7 +9,7 @@ header('Content-Type: text/html; charset=utf-8');
 echo "<!DOCTYPE html>
 <html>
 <head>
-    <title>Update Webhook View</title>
+    <title>Update Webhook Integration</title>
     <style>
         body { font-family: Arial, sans-serif; margin: 20px; background: #f5f5f5; }
         .container { max-width: 800px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; }
@@ -20,18 +20,220 @@ echo "<!DOCTYPE html>
 </head>
 <body>
 <div class='container'>
-    <h1>🔧 Update Webhook View</h1>
-    <p><strong>Creating enhanced webhook configuration interface</strong></p>";
+    <h1>🔧 Update Webhook Integration</h1>
+    <p><strong>Integrating webhook into component URL structure</strong></p>";
 
 $joomla_root = dirname(__FILE__);
 $admin_path = $joomla_root . '/administrator/components/com_produccion';
+$site_path = $joomla_root . '/components/com_produccion';
 
 // Get server URL
 $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https://' : 'http://';
 $server_url = $protocol . $_SERVER['HTTP_HOST'];
-$webhook_url = $server_url . '/public_webhook.php';
+$webhook_url = $server_url . '/index.php?option=com_produccion&task=webhook.receive';
 
-echo "<h3>1. Creating Enhanced Webhook Template</h3>";
+echo "<h3>1. Creating Site Webhook Controller</h3>";
+
+// Create site webhook controller
+$webhook_controller = '<?php
+namespace Joomla\\Component\\Produccion\\Site\\Controller;
+
+defined(\'_JEXEC\') or die;
+
+use Joomla\\CMS\\MVC\\Controller\\BaseController;
+use Joomla\\CMS\\Factory;
+use Joomla\\CMS\\Response\\JsonResponse;
+
+class WebhookController extends BaseController
+{
+    public function receive()
+    {
+        // Set JSON response
+        header(\'Content-Type: application/json\');
+        
+        // Get application
+        $app = Factory::getApplication();
+        
+        // Log function
+        $logFile = JPATH_ADMINISTRATOR . \'/logs/webhook.log\';
+        
+        try {
+            // Get request data
+            $input = $app->input;
+            $method = $_SERVER[\'REQUEST_METHOD\'];
+            
+            // Get all headers
+            $headers = [];
+            foreach ($_SERVER as $name => $value) {
+                if (substr($name, 0, 5) == \'HTTP_\') {
+                    $headers[str_replace(\' \', \'-\', ucwords(strtolower(str_replace(\'_\', \' \', substr($name, 5)))))] = $value;
+                }
+            }
+            
+            // Get body
+            $body = file_get_contents(\'php://input\');
+            $data = json_decode($body, true);
+            
+            if (!$data) {
+                $data = $input->post->getArray();
+            }
+            
+            // Log request
+            $logMessage = "\\n=== WEBHOOK REQUEST ===\\n";
+            $logMessage .= "Time: " . date(\'Y-m-d H:i:s\') . "\\n";
+            $logMessage .= "Method: " . $method . "\\n";
+            $logMessage .= "Headers: " . json_encode($headers) . "\\n";
+            $logMessage .= "Data: " . json_encode($data) . "\\n";
+            file_put_contents($logFile, $logMessage, FILE_APPEND | LOCK_EX);
+            
+            // Process webhook data
+            $db = Factory::getDbo();
+            $user = Factory::getUser(0); // System user
+            
+            if (!empty($data[\'orden_de_trabajo\'])) {
+                // Check if order exists
+                $query = $db->getQuery(true)
+                    ->select(\'id\')
+                    ->from($db->quoteName(\'#__produccion_ordenes\'))
+                    ->where($db->quoteName(\'orden_de_trabajo\') . \' = \' . $db->quote($data[\'orden_de_trabajo\']));
+                
+                $db->setQuery($query);
+                $ordenId = $db->loadResult();
+                
+                if ($ordenId) {
+                    // Update existing order
+                    $updateFields = [];
+                    
+                    if (!empty($data[\'estado\'])) {
+                        $updateFields[] = $db->quoteName(\'estado\') . \' = \' . $db->quote($data[\'estado\']);
+                    }
+                    
+                    if (!empty($data[\'tipo_orden\'])) {
+                        $updateFields[] = $db->quoteName(\'tipo_orden\') . \' = \' . $db->quote($data[\'tipo_orden\']);
+                    }
+                    
+                    $updateFields[] = $db->quoteName(\'modified\') . \' = NOW()\';
+                    
+                    if (!empty($updateFields)) {
+                        $query = $db->getQuery(true)
+                            ->update($db->quoteName(\'#__produccion_ordenes\'))
+                            ->set($updateFields)
+                            ->where($db->quoteName(\'id\') . \' = \' . (int)$ordenId);
+                        
+                        $db->setQuery($query);
+                        $db->execute();
+                    }
+                } else {
+                    // Insert new order
+                    $query = $db->getQuery(true)
+                        ->insert($db->quoteName(\'#__produccion_ordenes\'))
+                        ->columns([
+                            $db->quoteName(\'orden_de_trabajo\'),
+                            $db->quoteName(\'estado\'),
+                            $db->quoteName(\'tipo_orden\'),
+                            $db->quoteName(\'created_by\'),
+                            $db->quoteName(\'created\')
+                        ])
+                        ->values(
+                            $db->quote($data[\'orden_de_trabajo\']) . \', \' .
+                            $db->quote($data[\'estado\'] ?? \'nueva\') . \', \' .
+                            $db->quote($data[\'tipo_orden\'] ?? \'interna\') . \', \' .
+                            (int)$user->id . \', \' .
+                            \'NOW()\'
+                        );
+                    
+                    $db->setQuery($query);
+                    $db->execute();
+                    $ordenId = $db->insertid();
+                }
+                
+                // Process EAV data
+                if (!empty($data[\'info\']) && is_array($data[\'info\'])) {
+                    foreach ($data[\'info\'] as $key => $value) {
+                        // Check if attribute exists
+                        $query = $db->getQuery(true)
+                            ->select(\'id\')
+                            ->from($db->quoteName(\'#__produccion_ordenes_info\'))
+                            ->where($db->quoteName(\'orden_id\') . \' = \' . (int)$ordenId)
+                            ->where($db->quoteName(\'attribute_key\') . \' = \' . $db->quote($key));
+                        
+                        $db->setQuery($query);
+                        $attrId = $db->loadResult();
+                        
+                        if ($attrId) {
+                            // Update
+                            $query = $db->getQuery(true)
+                                ->update($db->quoteName(\'#__produccion_ordenes_info\'))
+                                ->set($db->quoteName(\'attribute_value\') . \' = \' . $db->quote($value))
+                                ->where($db->quoteName(\'id\') . \' = \' . (int)$attrId);
+                            
+                            $db->setQuery($query);
+                            $db->execute();
+                        } else {
+                            // Insert
+                            $query = $db->getQuery(true)
+                                ->insert($db->quoteName(\'#__produccion_ordenes_info\'))
+                                ->columns([
+                                    $db->quoteName(\'orden_id\'),
+                                    $db->quoteName(\'attribute_key\'),
+                                    $db->quoteName(\'attribute_value\')
+                                ])
+                                ->values(
+                                    (int)$ordenId . \', \' .
+                                    $db->quote($key) . \', \' .
+                                    $db->quote($value)
+                                );
+                            
+                            $db->setQuery($query);
+                            $db->execute();
+                        }
+                    }
+                }
+                
+                // Log success
+                file_put_contents($logFile, "SUCCESS: Order ID: " . $ordenId . "\\n", FILE_APPEND | LOCK_EX);
+                
+                // Return success response
+                echo json_encode([
+                    \'status\' => \'success\',
+                    \'message\' => \'Webhook processed successfully\',
+                    \'orden_id\' => $ordenId,
+                    \'orden_de_trabajo\' => $data[\'orden_de_trabajo\']
+                ]);
+            } else {
+                echo json_encode([
+                    \'status\' => \'error\',
+                    \'message\' => \'Missing orden_de_trabajo\',
+                    \'received_data\' => $data
+                ]);
+            }
+            
+        } catch (\\Exception $e) {
+            file_put_contents($logFile, "ERROR: " . $e->getMessage() . "\\n", FILE_APPEND | LOCK_EX);
+            
+            http_response_code(500);
+            echo json_encode([
+                \'status\' => \'error\',
+                \'message\' => $e->getMessage()
+            ]);
+        }
+        
+        $app->close();
+    }
+}';
+
+$controller_file = $site_path . '/src/Controller/WebhookController.php';
+if (!is_dir(dirname($controller_file))) {
+    mkdir(dirname($controller_file), 0755, true);
+}
+
+if (file_put_contents($controller_file, $webhook_controller)) {
+    echo "<div class='success'>✅ Created site webhook controller</div>";
+} else {
+    echo "<div class='error'>❌ Failed to create site webhook controller</div>";
+}
+
+echo "<h3>2. Creating Enhanced Webhook Template</h3>";
 
 // Create enhanced webhook template with copy button and Postman export
 $webhook_template = '<?php
