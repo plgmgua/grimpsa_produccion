@@ -10,17 +10,7 @@
     <version>1.0.34</version>
     <description>COM_PRODUCCION_XML_DESCRIPTION</description>
     
-    <install>
-        <sql>
-            <file driver="mysql" charset="utf8">sql/install.mysql.utf8.sql</file>
-        </sql>
-    </install>
-    
-    <uninstall>
-        <sql>
-            <file driver="mysql" charset="utf8">sql/uninstall.mysql.utf8.sql</file>
-        </sql>
-    </uninstall>
+    <!-- SQL installation removed - tables already exist -->
     
     <scriptfile>script.php</scriptfile>
     

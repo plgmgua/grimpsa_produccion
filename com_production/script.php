@@ -103,23 +103,9 @@ class Com_ProduccionInstallerScript extends InstallerScript
         $logContent .= "Admin Path: " . $adminPath . "\n";
         $logContent .= "Site Path: " . $sitePath . "\n";
         
-        // Check if SQL files exist in expected locations
-        $sqlFiles = [
-            'admin/sql/install.mysql.utf8.sql',
-            'admin/sql/uninstall.mysql.utf8.sql'
-        ];
-        
-        $logContent .= "\n=== SQL FILE VALIDATION ===\n";
-        foreach ($sqlFiles as $sqlFile) {
-            $fullPath = $installPath . '/' . $sqlFile;
-            $exists = file_exists($fullPath);
-            $logContent .= "SQL File: " . $sqlFile . "\n";
-            $logContent .= "Full Path: " . $fullPath . "\n";
-            $logContent .= "Exists: " . ($exists ? 'YES' : 'NO') . "\n";
-            $logContent .= "Size: " . ($exists ? filesize($fullPath) . ' bytes' : 'N/A') . "\n";
-            $logContent .= "Readable: " . ($exists ? (is_readable($fullPath) ? 'YES' : 'NO') : 'N/A') . "\n";
-            $logContent .= "---\n";
-        }
+        // SQL files removed - tables already exist
+        $logContent .= "\n=== SQL FILES SKIPPED ===\n";
+        $logContent .= "SQL installation skipped - tables already exist in database\n";
         
         // Check package contents
         $logContent .= "\n=== PACKAGE CONTENTS DEBUG ===\n";
@@ -136,27 +122,9 @@ class Com_ProduccionInstallerScript extends InstallerScript
             $logContent .= "Installation directory does not exist!\n";
         }
         
-        // Check for SQL files anywhere in the package
-        $logContent .= "\n=== SQL FILES SEARCH ===\n";
-        if (is_dir($installPath)) {
-            $sqlFilesFound = [];
-            $iterator = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($installPath));
-            foreach ($iterator as $file) {
-                if ($file->isFile() && preg_match('/\.sql$/i', $file->getFilename())) {
-                    $relativePath = str_replace($installPath . '/', '', $file->getPathname());
-                    $sqlFilesFound[] = $relativePath;
-                }
-            }
-            
-            if (empty($sqlFilesFound)) {
-                $logContent .= "❌ NO SQL FILES FOUND IN PACKAGE!\n";
-            } else {
-                $logContent .= "✅ SQL files found:\n";
-                foreach ($sqlFilesFound as $sqlFile) {
-                    $logContent .= "- " . $sqlFile . "\n";
-                }
-            }
-        }
+        // SQL files search skipped - not needed
+        $logContent .= "\n=== SQL FILES SEARCH SKIPPED ===\n";
+        $logContent .= "SQL files not included - tables already exist\n";
         
         // Check manifest file
         $logContent .= "\n=== MANIFEST VALIDATION ===\n";
@@ -168,11 +136,11 @@ class Com_ProduccionInstallerScript extends InstallerScript
             $manifestContent = file_get_contents($manifestPath);
             $logContent .= "Manifest Size: " . strlen($manifestContent) . " bytes\n";
             
-            // Check for SQL references in manifest
-            if (strpos($manifestContent, 'admin/sql/install.mysql.utf8.sql') !== false) {
-                $logContent .= "✅ Manifest contains correct SQL path: admin/sql/install.mysql.utf8.sql\n";
+            // Check for SQL references in manifest (should be removed)
+            if (strpos($manifestContent, 'install.mysql.utf8.sql') !== false) {
+                $logContent .= "⚠️ Manifest still contains SQL references (should be removed)\n";
             } else {
-                $logContent .= "❌ Manifest does NOT contain correct SQL path!\n";
+                $logContent .= "✅ Manifest correctly has no SQL references\n";
             }
         }
         
