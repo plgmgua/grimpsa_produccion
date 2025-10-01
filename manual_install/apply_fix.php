@@ -628,6 +628,671 @@ echo "<div class='info'>
     </ul>
 </div>";
 
+echo "<h3>6. Creating Frontend Work Orders View</h3>";
+
+// Create frontend controller for work orders
+$frontend_controller = <<<'ENDCONTROLLER'
+<?php
+namespace Joomla\Component\Produccion\Site\Controller;
+
+defined('_JEXEC') or die;
+
+use Joomla\CMS\MVC\Controller\BaseController;
+
+class OrdenesController extends BaseController
+{
+    protected $default_view = 'ordenes';
+}
+ENDCONTROLLER;
+
+$site_path = $joomla_root . '/components/com_produccion';
+$controller_file = $site_path . '/src/Controller/OrdenesController.php';
+
+if (!is_dir(dirname($controller_file))) {
+    mkdir(dirname($controller_file), 0755, true);
+}
+
+if (file_put_contents($controller_file, $frontend_controller)) {
+    echo "<div class='success'>✅ Created frontend ordenes controller</div>";
+} else {
+    echo "<div class='error'>❌ Failed to create controller</div>";
+}
+
+// Create frontend model
+$frontend_model = <<<'ENDMODEL'
+<?php
+namespace Joomla\Component\Produccion\Site\Model;
+
+defined('_JEXEC') or die;
+
+use Joomla\CMS\MVC\Model\ListModel;
+use Joomla\CMS\Factory;
+
+class OrdenesModel extends ListModel
+{
+    protected function getListQuery()
+    {
+        $db = $this->getDbo();
+        $query = $db->getQuery(true);
+        $user = Factory::getUser();
+        
+        // Select from work orders table
+        $query->select('*')
+              ->from($db->quoteName('joomla_produccion_ordenes'));
+        
+        // Apply filters
+        $search = $this->getState('filter.search');
+        if (!empty($search)) {
+            $search = $db->quote('%' . $db->escape($search, true) . '%');
+            $query->where('(' . 
+                $db->quoteName('orden_de_trabajo') . ' LIKE ' . $search . ' OR ' .
+                $db->quoteName('nombre_del_cliente') . ' LIKE ' . $search . ' OR ' .
+                $db->quoteName('descripcion_de_trabajo') . ' LIKE ' . $search .
+            ')');
+        }
+        
+        // Filter by agent
+        $agent = $this->getState('filter.agent');
+        if (!empty($agent)) {
+            $query->where($db->quoteName('agente_de_ventas') . ' = ' . $db->quote($agent));
+        }
+        
+        // Filter by date range
+        $dateFrom = $this->getState('filter.date_from');
+        if (!empty($dateFrom)) {
+            $query->where($db->quoteName('fecha_de_solicitud') . ' >= ' . $db->quote($dateFrom));
+        }
+        
+        $dateTo = $this->getState('filter.date_to');
+        if (!empty($dateTo)) {
+            $query->where($db->quoteName('fecha_de_solicitud') . ' <= ' . $db->quote($dateTo . ' 23:59:59'));
+        }
+        
+        // Check user permissions
+        $userGroups = $user->getAuthorisedGroups();
+        $adminGroups = [7, 8]; // Super Users group IDs - adjust as needed
+        
+        $isAdmin = !empty(array_intersect($userGroups, $adminGroups));
+        
+        if (!$isAdmin) {
+            // Sales agents only see their own orders
+            $query->where($db->quoteName('agente_de_ventas') . ' = ' . $db->quote($user->name));
+        }
+        
+        // Order by newest first
+        $query->order($db->quoteName('orden_de_trabajo') . ' DESC');
+        
+        return $query;
+    }
+    
+    protected function populateState($ordering = null, $direction = null)
+    {
+        $app = Factory::getApplication();
+        
+        // Get filter values from request
+        $search = $app->getUserStateFromRequest($this->context . '.filter.search', 'filter_search', '', 'string');
+        $this->setState('filter.search', $search);
+        
+        $agent = $app->getUserStateFromRequest($this->context . '.filter.agent', 'filter_agent', '', 'string');
+        $this->setState('filter.agent', $agent);
+        
+        $dateFrom = $app->getUserStateFromRequest($this->context . '.filter.date_from', 'filter_date_from', '', 'string');
+        $this->setState('filter.date_from', $dateFrom);
+        
+        $dateTo = $app->getUserStateFromRequest($this->context . '.filter.date_to', 'filter_date_to', '', 'string');
+        $this->setState('filter.date_to', $dateTo);
+        
+        parent::populateState('orden_de_trabajo', 'DESC');
+    }
+    
+    public function getAgents()
+    {
+        $db = $this->getDbo();
+        $query = $db->getQuery(true)
+            ->select('DISTINCT ' . $db->quoteName('agente_de_ventas'))
+            ->from($db->quoteName('joomla_produccion_ordenes'))
+            ->where($db->quoteName('agente_de_ventas') . ' IS NOT NULL')
+            ->order($db->quoteName('agente_de_ventas') . ' ASC');
+        
+        $db->setQuery($query);
+        return $db->loadColumn();
+    }
+}
+ENDMODEL;
+
+$model_file = $site_path . '/src/Model/OrdenesModel.php';
+
+if (!is_dir(dirname($model_file))) {
+    mkdir(dirname($model_file), 0755, true);
+}
+
+if (file_put_contents($model_file, $frontend_model)) {
+    echo "<div class='success'>✅ Created frontend ordenes model</div>";
+} else {
+    echo "<div class='error'>❌ Failed to create model</div>";
+}
+
+// Create frontend view
+$frontend_view = <<<'ENDVIEW'
+<?php
+namespace Joomla\Component\Produccion\Site\View\Ordenes;
+
+defined('_JEXEC') or die;
+
+use Joomla\CMS\MVC\View\HtmlView as BaseHtmlView;
+use Joomla\CMS\Factory;
+
+class HtmlView extends BaseHtmlView
+{
+    protected $items;
+    protected $pagination;
+    protected $state;
+    protected $agents;
+    
+    public function display($tpl = null)
+    {
+        $this->items = $this->get('Items');
+        $this->pagination = $this->get('Pagination');
+        $this->state = $this->get('State');
+        $this->agents = $this->get('Agents');
+        
+        parent::display($tpl);
+    }
+}
+ENDVIEW;
+
+$view_file = $site_path . '/src/View/Ordenes/HtmlView.php';
+
+if (!is_dir(dirname($view_file))) {
+    mkdir(dirname($view_file), 0755, true);
+}
+
+if (file_put_contents($view_file, $frontend_view)) {
+    echo "<div class='success'>✅ Created frontend ordenes view</div>";
+} else {
+    echo "<div class='error'>❌ Failed to create view</div>";
+}
+
+// Create frontend template
+$frontend_template = <<<'ENDTEMPLATE'
+<?php
+defined('_JEXEC') or die;
+
+use Joomla\CMS\Factory;
+use Joomla\CMS\Router\Route;
+use Joomla\CMS\Uri\Uri;
+
+$user = Factory::getUser();
+$app = Factory::getApplication();
+$input = $app->input;
+
+// Get current filters
+$filterSearch = $this->state->get('filter.search');
+$filterAgent = $this->state->get('filter.agent');
+$filterDateFrom = $this->state->get('filter.date_from');
+$filterDateTo = $this->state->get('filter.date_to');
+?>
+
+<style>
+.ordenes-container {
+    max-width: 1200px;
+    margin: 20px auto;
+    padding: 20px;
+    font-family: Arial, sans-serif;
+}
+
+.page-header {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    padding: 30px;
+    border-radius: 10px;
+    margin-bottom: 30px;
+}
+
+.page-header h1 {
+    margin: 0;
+    font-size: 32px;
+}
+
+.filters-card {
+    background: white;
+    border: 1px solid #e0e0e0;
+    border-radius: 8px;
+    padding: 20px;
+    margin-bottom: 20px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.filters-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 15px;
+    margin-bottom: 15px;
+}
+
+.filter-group {
+    display: flex;
+    flex-direction: column;
+}
+
+.filter-group label {
+    font-weight: bold;
+    margin-bottom: 5px;
+    color: #333;
+}
+
+.filter-group input,
+.filter-group select {
+    padding: 8px 12px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 14px;
+}
+
+.filter-buttons {
+    display: flex;
+    gap: 10px;
+}
+
+.btn {
+    padding: 10px 20px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+    transition: all 0.3s;
+}
+
+.btn-primary {
+    background: #667eea;
+    color: white;
+}
+
+.btn-primary:hover {
+    background: #5568d3;
+}
+
+.btn-secondary {
+    background: #6c757d;
+    color: white;
+}
+
+.btn-secondary:hover {
+    background: #5a6268;
+}
+
+.ordenes-table {
+    width: 100%;
+    background: white;
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.ordenes-table table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.ordenes-table thead {
+    background: #f8f9fa;
+}
+
+.ordenes-table th {
+    padding: 15px;
+    text-align: left;
+    font-weight: bold;
+    color: #333;
+    border-bottom: 2px solid #dee2e6;
+}
+
+.ordenes-table td {
+    padding: 12px 15px;
+    border-bottom: 1px solid #f0f0f0;
+}
+
+.ordenes-table tbody tr:hover {
+    background: #f8f9fa;
+}
+
+.orden-number {
+    font-weight: bold;
+    color: #667eea;
+    text-decoration: none;
+    font-size: 16px;
+}
+
+.orden-number:hover {
+    text-decoration: underline;
+}
+
+.pagination-wrapper {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    margin-top: 20px;
+    padding: 20px;
+}
+
+.pagination {
+    display: flex;
+    gap: 5px;
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+.pagination li {
+    display: inline-block;
+}
+
+.pagination a,
+.pagination span {
+    padding: 8px 12px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    text-decoration: none;
+    color: #333;
+}
+
+.pagination .active span {
+    background: #667eea;
+    color: white;
+    border-color: #667eea;
+}
+
+.pagination a:hover {
+    background: #f8f9fa;
+}
+
+.no-results {
+    text-align: center;
+    padding: 40px;
+    color: #666;
+}
+
+.stats-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 15px;
+    margin-bottom: 20px;
+}
+
+.stat-card {
+    background: white;
+    border-radius: 8px;
+    padding: 20px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    border-left: 4px solid #667eea;
+}
+
+.stat-card h3 {
+    margin: 0 0 10px 0;
+    color: #666;
+    font-size: 14px;
+}
+
+.stat-card .stat-value {
+    font-size: 32px;
+    font-weight: bold;
+    color: #333;
+}
+</style>
+
+<div class="ordenes-container">
+    <div class="page-header">
+        <h1>📋 Órdenes de Trabajo</h1>
+        <p>Bienvenido, <?php echo htmlspecialchars($user->name); ?></p>
+    </div>
+    
+    <!-- Stats -->
+    <div class="stats-row">
+        <div class="stat-card">
+            <h3>Total Órdenes</h3>
+            <div class="stat-value"><?php echo count($this->items); ?></div>
+        </div>
+        <div class="stat-card">
+            <h3>Mi Agente</h3>
+            <div class="stat-value" style="font-size: 18px;"><?php echo htmlspecialchars($user->name); ?></div>
+        </div>
+    </div>
+    
+    <!-- Filters -->
+    <div class="filters-card">
+        <form action="<?php echo Route::_('index.php?option=com_produccion&view=ordenes'); ?>" method="post" name="adminForm" id="adminForm">
+            
+            <div class="filters-row">
+                <div class="filter-group">
+                    <label for="filter_search">Buscar:</label>
+                    <input type="text" 
+                           name="filter_search" 
+                           id="filter_search" 
+                           value="<?php echo htmlspecialchars($filterSearch); ?>" 
+                           placeholder="Orden, Cliente, Descripción...">
+                </div>
+                
+                <div class="filter-group">
+                    <label for="filter_agent">Agente de Ventas:</label>
+                    <select name="filter_agent" id="filter_agent">
+                        <option value="">-- Todos los Agentes --</option>
+                        <?php foreach ($this->agents as $agent): ?>
+                            <option value="<?php echo htmlspecialchars($agent); ?>" 
+                                    <?php echo ($filterAgent == $agent) ? 'selected' : ''; ?>>
+                                <?php echo htmlspecialchars($agent); ?>
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+                
+                <div class="filter-group">
+                    <label for="filter_date_from">Desde:</label>
+                    <input type="date" 
+                           name="filter_date_from" 
+                           id="filter_date_from" 
+                           value="<?php echo htmlspecialchars($filterDateFrom); ?>">
+                </div>
+                
+                <div class="filter-group">
+                    <label for="filter_date_to">Hasta:</label>
+                    <input type="date" 
+                           name="filter_date_to" 
+                           id="filter_date_to" 
+                           value="<?php echo htmlspecialchars($filterDateTo); ?>">
+                </div>
+            </div>
+            
+            <div class="filter-buttons">
+                <button type="submit" class="btn btn-primary">🔍 Filtrar</button>
+                <button type="button" class="btn btn-secondary" onclick="clearFilters()">🔄 Limpiar</button>
+            </div>
+            
+            <input type="hidden" name="task" value="" />
+            <input type="hidden" name="option" value="com_produccion" />
+        </form>
+    </div>
+    
+    <!-- Orders Table -->
+    <div class="ordenes-table">
+        <?php if (!empty($this->items)): ?>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Orden #</th>
+                        <th>Cliente</th>
+                        <th>Descripción</th>
+                        <th>Fecha Solicitud</th>
+                        <th>Fecha Entrega</th>
+                        <th>Agente</th>
+                        <th>Acciones</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php foreach ($this->items as $item): ?>
+                        <tr>
+                            <td>
+                                <a href="<?php echo Route::_('index.php?option=com_produccion&view=orden&id=' . $item->orden_de_trabajo); ?>" 
+                                   class="orden-number">
+                                    <?php echo htmlspecialchars($item->orden_de_trabajo); ?>
+                                </a>
+                            </td>
+                            <td><?php echo htmlspecialchars($item->nombre_del_cliente ?? '-'); ?></td>
+                            <td><?php echo htmlspecialchars(substr($item->descripcion_de_trabajo ?? '-', 0, 50)); ?><?php echo strlen($item->descripcion_de_trabajo ?? '') > 50 ? '...' : ''; ?></td>
+                            <td><?php echo htmlspecialchars($item->fecha_de_solicitud ?? '-'); ?></td>
+                            <td><?php echo htmlspecialchars($item->fecha_de_entrega ?? '-'); ?></td>
+                            <td><?php echo htmlspecialchars($item->agente_de_ventas ?? '-'); ?></td>
+                            <td>
+                                <a href="<?php echo Route::_('index.php?option=com_produccion&view=orden&id=' . $item->orden_de_trabajo); ?>" 
+                                   class="btn btn-primary" 
+                                   style="padding: 5px 10px; font-size: 12px;">
+                                    👁️ Ver
+                                </a>
+                            </td>
+                        </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+        <?php else: ?>
+            <div class="no-results">
+                <h3>📭 No se encontraron órdenes</h3>
+                <p>No hay órdenes de trabajo que coincidan con los filtros seleccionados.</p>
+            </div>
+        <?php endif; ?>
+    </div>
+    
+    <!-- Pagination -->
+    <?php if ($this->pagination->pagesTotal > 1): ?>
+        <div class="pagination-wrapper">
+            <?php echo $this->pagination->getPagesLinks(); ?>
+        </div>
+    <?php endif; ?>
+</div>
+
+<script>
+function clearFilters() {
+    document.getElementById('filter_search').value = '';
+    document.getElementById('filter_agent').value = '';
+    document.getElementById('filter_date_from').value = '';
+    document.getElementById('filter_date_to').value = '';
+    document.getElementById('adminForm').submit();
+}
+</script>
+ENDTEMPLATE;
+
+$template_file = $site_path . '/tmpl/ordenes/default.php';
+
+if (!is_dir(dirname($template_file))) {
+    mkdir(dirname($template_file), 0755, true);
+}
+
+if (file_put_contents($template_file, $frontend_template)) {
+    echo "<div class='success'>✅ Created frontend ordenes template</div>";
+} else {
+    echo "<div class='error'>❌ Failed to create template</div>";
+}
+
+echo "<div class='info'>
+    <h4>✨ Frontend Work Orders View Created!</h4>
+    <p><strong>Access URL:</strong></p>
+    <p><a href='/index.php?option=com_produccion&view=ordenes' target='_blank'>
+        https://grimpsa_webserver.grantsolutions.cc/index.php?option=com_produccion&view=ordenes
+    </a></p>
+    
+    <h4>Features:</h4>
+    <ul>
+        <li>✅ Paginated list sorted by newest first</li>
+        <li>✅ Search by order #, client, or description</li>
+        <li>✅ Filter by sales agent</li>
+        <li>✅ Filter by date range</li>
+        <li>✅ Permission-based: Sales agents see only their orders</li>
+        <li>✅ Admins see all orders</li>
+        <li>✅ Click order number to view details</li>
+    </ul>
+</div>";
+
+echo "<h3>7. Creating Menu Item Type</h3>";
+
+// Load Joomla configuration
+$config_file = $joomla_root . '/configuration.php';
+
+if (file_exists($config_file)) {
+    require_once $config_file;
+    $config = new JConfig();
+    
+    try {
+        $pdo = new PDO(
+            "mysql:host=" . $config->host . ";dbname=" . $config->db . ";charset=utf8", 
+            $config->user, 
+            $config->password
+        );
+        $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+        
+        // Check if menu item already exists
+        $check_sql = "SELECT id FROM " . $config->dbprefix . "menu 
+                      WHERE link = 'index.php?option=com_produccion&view=ordenes' 
+                      AND client_id = 0";
+        $stmt = $pdo->prepare($check_sql);
+        $stmt->execute();
+        $existingMenuItem = $stmt->fetch(PDO::FETCH_ASSOC);
+        
+        if (!$existingMenuItem) {
+            // Get component ID
+            $comp_sql = "SELECT extension_id FROM " . $config->dbprefix . "extensions 
+                         WHERE element = 'com_produccion' AND type = 'component'";
+            $stmt = $pdo->prepare($comp_sql);
+            $stmt->execute();
+            $component = $stmt->fetch(PDO::FETCH_ASSOC);
+            
+            if ($component) {
+                // Create menu item
+                $menu_sql = "INSERT INTO " . $config->dbprefix . "menu 
+                    (menutype, title, alias, note, path, link, type, published, parent_id, level, component_id, access, img, params, lft, rgt, home, language, client_id)
+                    VALUES ('mainmenu', 'Órdenes de Trabajo', 'ordenes-de-trabajo', '', 'ordenes-de-trabajo', 
+                            'index.php?option=com_produccion&view=ordenes', 'component', 1, 1, 1, :component_id, 1, '', 
+                            '{\"menu-anchor_title\":\"\",\"menu-anchor_css\":\"\",\"menu_image\":\"\",\"menu_text\":1,\"menu_show\":1}', 
+                            0, 0, 0, '*', 0)";
+                
+                $stmt = $pdo->prepare($menu_sql);
+                if ($stmt->execute(['component_id' => $component['extension_id']])) {
+                    echo "<div class='success'>✅ Created frontend menu item 'Órdenes de Trabajo'</div>";
+                    echo "<div class='info'>ℹ️ Menu Type: mainmenu (you can move it to any menu in Joomla admin)</div>";
+                } else {
+                    echo "<div class='error'>❌ Failed to create menu item</div>";
+                }
+            } else {
+                echo "<div class='error'>❌ Component not found in database</div>";
+            }
+        } else {
+            echo "<div class='info'>ℹ️ Menu item already exists (ID: {$existingMenuItem['id']})</div>";
+        }
+        
+    } catch (PDOException $e) {
+        echo "<div class='error'>❌ Database error: " . $e->getMessage() . "</div>";
+    }
+} else {
+    echo "<div class='info'>ℹ️ Skipped menu item creation (run from Joomla root to create menu)</div>";
+}
+
+echo "<h3>8. How to Add to Your Menu</h3>";
+
+echo "<div class='info'>
+    <p><strong>Option 1: Use the Auto-Created Menu Item</strong></p>
+    <ol>
+        <li>Go to: Menus → Main Menu (or your desired menu)</li>
+        <li>Look for 'Órdenes de Trabajo' menu item</li>
+        <li>Edit it to customize title, access level, etc.</li>
+    </ol>
+    
+    <p><strong>Option 2: Create Manually</strong></p>
+    <ol>
+        <li>Go to: Menus → [Your Menu] → Add New Menu Item</li>
+        <li>Menu Item Type: Click 'Select'</li>
+        <li>Find: Production Management System → Work Orders List</li>
+        <li>Title: 'Órdenes de Trabajo' (or your preference)</li>
+        <li>Access: Public or Registered (depending on your needs)</li>
+        <li>Save</li>
+    </ol>
+</div>";
+
 echo "</div>
 </body>
 </html>";
