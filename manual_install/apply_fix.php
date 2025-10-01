@@ -451,7 +451,7 @@ use Joomla\\CMS\\Uri\\Uri;
 // Get server URL
 $uri = Uri::getInstance();
 $server_url = $uri->toString([\'scheme\', \'host\', \'port\']);
-$webhook_url = $server_url . \'/index.php?option=com_produccion&task=webhook.receive\';
+$webhook_url = $server_url . \'/webhook_produccion.php\';
 
 // Sample webhook payload
 $sample_payload = [
