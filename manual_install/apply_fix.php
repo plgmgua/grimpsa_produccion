@@ -74,10 +74,7 @@ function logWebhook($message, $data = null) {
 }
 
 try {
-    // Get application
-    $app = Joomla\CMS\Factory::getApplication('site');
-    
-    // Get request data
+    // Get request data (before app init)
     $method = $_SERVER['REQUEST_METHOD'];
     $rawBody = file_get_contents('php://input');
     $data = json_decode($rawBody, true);
@@ -87,7 +84,7 @@ try {
         $data = $_POST;
     }
     
-    // Log the request
+    // Log the request (before app init)
     logWebhook('Webhook Request Received', [
         'method' => $method,
         'raw_body' => $rawBody,
@@ -96,7 +93,7 @@ try {
         'get_data' => $_GET
     ]);
     
-    // Get database
+    // Get database directly without application
     $db = Joomla\CMS\Factory::getDbo();
     
     // Process the webhook
