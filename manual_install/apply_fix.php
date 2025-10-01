@@ -32,10 +32,7 @@ $server_url = $protocol . $_SERVER['HTTP_HOST'];
 
 echo "<h3>1. Creating Webhook Endpoint (webhook_produccion.php)</h3>";
 
-// Create webhook file - using file_get_contents to avoid escaping issues
-$webhook_code = file_get_contents(__FILE__);
-
-// Create the actual webhook PHP file
+// Create the webhook PHP file
 $webhook_file = $joomla_root . '/webhook_produccion.php';
 
 $webhook_content = <<<'ENDWEBHOOK'
