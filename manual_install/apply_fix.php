@@ -270,40 +270,40 @@ $logFile = JPATH_ADMINISTRATOR . '/logs/webhook.log';
 
 try {
     // Get request data
-    $method = $_SERVER[\'REQUEST_METHOD\'];
-    $body = file_get_contents(\'php://input\');
+    $method = $_SERVER['REQUEST_METHOD'];
+    $body = file_get_contents('php://input');
     $data = json_decode($body, true);
     
-    if (!$data && $method === \'POST\') {
+    if (!$data && $method === 'POST') {
         $data = $_POST;
     }
     
     // Get headers
     $headers = [];
     foreach ($_SERVER as $name => $value) {
-        if (substr($name, 0, 5) == \'HTTP_\') {
-            $headers[str_replace(\' \', \'-\', ucwords(strtolower(str_replace(\'_\', \' \', substr($name, 5)))))] = $value;
+        if (substr($name, 0, 5) == 'HTTP_') {
+            $headers[str_replace(' ', '-', ucwords(strtolower(str_replace('_', ' ', substr($name, 5)))))] = $value;
         }
     }
     
     // Log request
-    $logMessage = "\\n=== WEBHOOK REQUEST ===\\n";
-    $logMessage .= "Time: " . date(\'Y-m-d H:i:s\') . "\\n";
-    $logMessage .= "Method: " . $method . "\\n";
-    $logMessage .= "Headers: " . json_encode($headers) . "\\n";
-    $logMessage .= "Data: " . json_encode($data) . "\\n";
+    $logMessage = "\n=== WEBHOOK REQUEST ===\n";
+    $logMessage .= "Time: " . date('Y-m-d H:i:s') . "\n";
+    $logMessage .= "Method: " . $method . "\n";
+    $logMessage .= "Headers: " . json_encode($headers) . "\n";
+    $logMessage .= "Data: " . json_encode($data) . "\n";
     file_put_contents($logFile, $logMessage, FILE_APPEND | LOCK_EX);
     
     // Get database
     $db = Factory::getDbo();
     
     // Process webhook data
-    if (!empty($data[\'orden_de_trabajo\'])) {
+    if (!empty($data['orden_de_trabajo'])) {
         // Check if order exists
         $query = $db->getQuery(true)
-            ->select(\'id\')
-            ->from($db->quoteName(\'#__produccion_ordenes\'))
-            ->where($db->quoteName(\'orden_de_trabajo\') . \' = \' . $db->quote($data[\'orden_de_trabajo\']));
+            ->select('id')
+            ->from($db->quoteName('#__produccion_ordenes'))
+            ->where($db->quoteName('orden_de_trabajo') . ' = ' . $db->quote($data['orden_de_trabajo']));
         
         $db->setQuery($query);
         $ordenId = $db->loadResult();
@@ -312,21 +312,21 @@ try {
             // Update existing order
             $updateFields = [];
             
-            if (!empty($data[\'estado\'])) {
-                $updateFields[] = $db->quoteName(\'estado\') . \' = \' . $db->quote($data[\'estado\']);
+            if (!empty($data['estado'])) {
+                $updateFields[] = $db->quoteName('estado') . ' = ' . $db->quote($data['estado']);
             }
             
-            if (!empty($data[\'tipo_orden\'])) {
-                $updateFields[] = $db->quoteName(\'tipo_orden\') . \' = \' . $db->quote($data[\'tipo_orden\']);
+            if (!empty($data['tipo_orden'])) {
+                $updateFields[] = $db->quoteName('tipo_orden') . ' = ' . $db->quote($data['tipo_orden']);
             }
             
-            $updateFields[] = $db->quoteName(\'modified\') . \' = NOW()\';
+            $updateFields[] = $db->quoteName('modified') . ' = NOW()';
             
             if (!empty($updateFields)) {
                 $query = $db->getQuery(true)
-                    ->update($db->quoteName(\'#__produccion_ordenes\'))
+                    ->update($db->quoteName('#__produccion_ordenes'))
                     ->set($updateFields)
-                    ->where($db->quoteName(\'id\') . \' = \' . (int)$ordenId);
+                    ->where($db->quoteName('id') . ' = ' . (int)$ordenId);
                 
                 $db->setQuery($query);
                 $db->execute();
@@ -334,20 +334,20 @@ try {
         } else {
             // Insert new order
             $query = $db->getQuery(true)
-                ->insert($db->quoteName(\'#__produccion_ordenes\'))
+                ->insert($db->quoteName('#__produccion_ordenes'))
                 ->columns([
-                    $db->quoteName(\'orden_de_trabajo\'),
-                    $db->quoteName(\'estado\'),
-                    $db->quoteName(\'tipo_orden\'),
-                    $db->quoteName(\'created_by\'),
-                    $db->quoteName(\'created\')
+                    $db->quoteName('orden_de_trabajo'),
+                    $db->quoteName('estado'),
+                    $db->quoteName('tipo_orden'),
+                    $db->quoteName('created_by'),
+                    $db->quoteName('created')
                 ])
                 ->values(
-                    $db->quote($data[\'orden_de_trabajo\']) . \', \' .
-                    $db->quote($data[\'estado\'] ?? \'nueva\') . \', \' .
-                    $db->quote($data[\'tipo_orden\'] ?? \'interna\') . \', \' .
-                    \'0, \' . // System user
-                    \'NOW()\'
+                    $db->quote($data['orden_de_trabajo']) . ', ' .
+                    $db->quote($data['estado'] ?? 'nueva') . ', ' .
+                    $db->quote($data['tipo_orden'] ?? 'interna') . ', ' .
+                    '0, ' . // System user
+                    'NOW()'
                 );
             
             $db->setQuery($query);
@@ -356,14 +356,14 @@ try {
         }
         
         // Process EAV data (info object)
-        if (!empty($data[\'info\']) && is_array($data[\'info\'])) {
-            foreach ($data[\'info\'] as $key => $value) {
+        if (!empty($data['info']) && is_array($data['info'])) {
+            foreach ($data['info'] as $key => $value) {
                 // Check if attribute exists
                 $query = $db->getQuery(true)
-                    ->select(\'id\')
-                    ->from($db->quoteName(\'#__produccion_ordenes_info\'))
-                    ->where($db->quoteName(\'orden_id\') . \' = \' . (int)$ordenId)
-                    ->where($db->quoteName(\'attribute_key\') . \' = \' . $db->quote($key));
+                    ->select('id')
+                    ->from($db->quoteName('#__produccion_ordenes_info'))
+                    ->where($db->quoteName('orden_id') . ' = ' . (int)$ordenId)
+                    ->where($db->quoteName('attribute_key') . ' = ' . $db->quote($key));
                 
                 $db->setQuery($query);
                 $attrId = $db->loadResult();
@@ -371,24 +371,24 @@ try {
                 if ($attrId) {
                     // Update
                     $query = $db->getQuery(true)
-                        ->update($db->quoteName(\'#__produccion_ordenes_info\'))
-                        ->set($db->quoteName(\'attribute_value\') . \' = \' . $db->quote($value))
-                        ->where($db->quoteName(\'id\') . \' = \' . (int)$attrId);
+                        ->update($db->quoteName('#__produccion_ordenes_info'))
+                        ->set($db->quoteName('attribute_value') . ' = ' . $db->quote($value))
+                        ->where($db->quoteName('id') . ' = ' . (int)$attrId);
                     
                     $db->setQuery($query);
                     $db->execute();
                 } else {
                     // Insert
                     $query = $db->getQuery(true)
-                        ->insert($db->quoteName(\'#__produccion_ordenes_info\'))
+                        ->insert($db->quoteName('#__produccion_ordenes_info'))
                         ->columns([
-                            $db->quoteName(\'orden_id\'),
-                            $db->quoteName(\'attribute_key\'),
-                            $db->quoteName(\'attribute_value\')
+                            $db->quoteName('orden_id'),
+                            $db->quoteName('attribute_key'),
+                            $db->quoteName('attribute_value')
                         ])
                         ->values(
-                            (int)$ordenId . \', \' .
-                            $db->quote($key) . \', \' .
+                            (int)$ordenId . ', ' .
+                            $db->quote($key) . ', ' .
                             $db->quote($value)
                         );
                     
@@ -399,30 +399,30 @@ try {
         }
         
         // Log success
-        file_put_contents($logFile, "SUCCESS: Order ID: " . $ordenId . "\\n", FILE_APPEND | LOCK_EX);
+        file_put_contents($logFile, "SUCCESS: Order ID: " . $ordenId . "\n", FILE_APPEND | LOCK_EX);
         
         // Return success
         echo json_encode([
-            \'status\' => \'success\',
-            \'message\' => \'Webhook processed successfully\',
-            \'orden_id\' => $ordenId,
-            \'orden_de_trabajo\' => $data[\'orden_de_trabajo\']
+            'status' => 'success',
+            'message' => 'Webhook processed successfully',
+            'orden_id' => $ordenId,
+            'orden_de_trabajo' => $data['orden_de_trabajo']
         ]);
     } else {
         echo json_encode([
-            \'status\' => \'error\',
-            \'message\' => \'Missing orden_de_trabajo\',
-            \'received_data\' => $data
+            'status' => 'error',
+            'message' => 'Missing orden_de_trabajo',
+            'received_data' => $data
         ]);
     }
     
 } catch (Exception $e) {
-    file_put_contents($logFile, "ERROR: " . $e->getMessage() . "\\n", FILE_APPEND | LOCK_EX);
+    file_put_contents($logFile, "ERROR: " . $e->getMessage() . "\n", FILE_APPEND | LOCK_EX);
     
     http_response_code(500);
     echo json_encode([
-        \'status\' => \'error\',
-        \'message\' => $e->getMessage()
+        'status' => 'error',
+        'message' => $e->getMessage()
     ]);
 }
 
