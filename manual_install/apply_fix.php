@@ -422,11 +422,17 @@ try {
     http_response_code(500);
     echo json_encode([
         'status' => 'error',
-        'message' => $e->getMessage()
+        'message' => $e->getMessage(),
+        'trace' => $e->getTraceAsString()
     ]);
 }
 
-$app->close();
+// Make sure output is flushed
+if (ob_get_length()) {
+    ob_end_flush();
+}
+
+exit(0);
 WEBHOOK;
 
 $webhook_file = $joomla_root . '/webhook_produccion.php';
