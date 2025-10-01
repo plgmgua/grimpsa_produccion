@@ -93,40 +93,69 @@ try {
         'get_data' => $_GET
     ]);
     
+    // Handle different payload structures
+    // If data comes wrapped in 'form_data', extract it
+    if (isset($data['form_data']) && is_array($data['form_data'])) {
+        $formData = $data['form_data'];
+        $requestTitle = $data['request_title'] ?? 'Unknown';
+    } else {
+        $formData = $data;
+        $requestTitle = 'Direct Request';
+    }
+    
     // Log successful receipt
     logWebhook('Webhook Data Validated', [
-        'has_orden_de_trabajo' => !empty($data['orden_de_trabajo']),
-        'orden_de_trabajo' => $data['orden_de_trabajo'] ?? 'NOT PROVIDED',
+        'request_title' => $requestTitle,
+        'has_form_data' => isset($data['form_data']),
+        'form_data_fields' => array_keys($formData),
         'full_payload' => $data
     ]);
     
     // Get database directly without application
     $db = Joomla\CMS\Factory::getDbo();
     
+    // Generate orden_de_trabajo if not provided
+    if (empty($formData['orden_de_trabajo'])) {
+        // Auto-generate order number
+        $query = $db->getQuery(true)
+            ->select('MAX(CAST(SUBSTRING(orden_de_trabajo, 4) AS UNSIGNED))')
+            ->from($db->quoteName('#__produccion_ordenes'))
+            ->where($db->quoteName('orden_de_trabajo') . ' LIKE ' . $db->quote('OT-%'));
+        
+        $db->setQuery($query);
+        $lastNumber = $db->loadResult();
+        $newNumber = ($lastNumber ? $lastNumber + 1 : 1);
+        $formData['orden_de_trabajo'] = 'OT-' . date('Y') . '-' . str_pad($newNumber, 4, '0', STR_PAD_LEFT);
+        
+        logWebhook('Auto-generated orden_de_trabajo', [
+            'orden_de_trabajo' => $formData['orden_de_trabajo']
+        ]);
+    }
+    
     // Process the webhook
-    if (!empty($data['orden_de_trabajo'])) {
+    if (!empty($formData['orden_de_trabajo'])) {
         
         // Check if order exists
         $query = $db->getQuery(true)
             ->select('id')
             ->from($db->quoteName('#__produccion_ordenes'))
-            ->where($db->quoteName('orden_de_trabajo') . ' = ' . $db->quote($data['orden_de_trabajo']));
+            ->where($db->quoteName('orden_de_trabajo') . ' = ' . $db->quote($formData['orden_de_trabajo']));
         
         $db->setQuery($query);
         $ordenId = $db->loadResult();
         
         if ($ordenId) {
             // Update existing order
-            logWebhook('Updating existing order', ['orden_id' => $ordenId, 'orden_de_trabajo' => $data['orden_de_trabajo']]);
+            logWebhook('Updating existing order', ['orden_id' => $ordenId, 'orden_de_trabajo' => $formData['orden_de_trabajo']]);
             
             $updateFields = [];
             
-            if (!empty($data['estado'])) {
-                $updateFields[] = $db->quoteName('estado') . ' = ' . $db->quote($data['estado']);
+            if (!empty($formData['estado'])) {
+                $updateFields[] = $db->quoteName('estado') . ' = ' . $db->quote($formData['estado']);
             }
             
-            if (!empty($data['tipo_orden'])) {
-                $updateFields[] = $db->quoteName('tipo_orden') . ' = ' . $db->quote($data['tipo_orden']);
+            if (!empty($formData['tipo_orden'])) {
+                $updateFields[] = $db->quoteName('tipo_orden') . ' = ' . $db->quote($formData['tipo_orden']);
             }
             
             $updateFields[] = $db->quoteName('modified') . ' = NOW()';
@@ -142,7 +171,7 @@ try {
             }
         } else {
             // Create new order
-            logWebhook('Creating new order', ['orden_de_trabajo' => $data['orden_de_trabajo']]);
+            logWebhook('Creating new order', ['orden_de_trabajo' => $formData['orden_de_trabajo']]);
             
             $query = $db->getQuery(true)
                 ->insert($db->quoteName('#__produccion_ordenes'))
@@ -153,9 +182,9 @@ try {
                     $db->quoteName('created_by')
                 ])
                 ->values(
-                    $db->quote($data['orden_de_trabajo']) . ', ' .
-                    $db->quote($data['estado'] ?? 'nueva') . ', ' .
-                    $db->quote($data['tipo_orden'] ?? 'interna') . ', ' .
+                    $db->quote($formData['orden_de_trabajo']) . ', ' .
+                    $db->quote($formData['estado'] ?? 'nueva') . ', ' .
+                    $db->quote($formData['tipo_orden'] ?? 'interna') . ', ' .
                     '0'
                 );
             
@@ -164,27 +193,26 @@ try {
             $ordenId = $db->insertid();
         }
         
-        // Log info attributes (don't save to DB yet - just log for review)
-        if (!empty($data['info']) && is_array($data['info'])) {
-            logWebhook('INFO Attributes Received', [
-                'orden_id' => $ordenId,
-                'attributes_count' => count($data['info']),
-                'attributes' => $data['info']
-            ]);
-        }
+        // Log all form data fields received
+        logWebhook('ALL Form Data Fields Received', [
+            'orden_id' => $ordenId,
+            'orden_de_trabajo' => $formData['orden_de_trabajo'],
+            'all_fields' => $formData
+        ]);
         
         // Log success
         logWebhook('Webhook processed successfully', [
             'orden_id' => $ordenId,
-            'orden_de_trabajo' => $data['orden_de_trabajo']
+            'orden_de_trabajo' => $formData['orden_de_trabajo']
         ]);
         
         // Return success response
         echo json_encode([
             'status' => 'success',
-            'message' => 'Webhook processed successfully',
+            'message' => 'Webhook processed successfully - Order created and logged',
             'orden_id' => $ordenId,
-            'orden_de_trabajo' => $data['orden_de_trabajo'],
+            'orden_de_trabajo' => $formData['orden_de_trabajo'],
+            'request_title' => $requestTitle,
             'timestamp' => date('Y-m-d H:i:s')
         ]);
         
