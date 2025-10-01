@@ -236,7 +236,8 @@ if (file_put_contents($controller_file, $webhook_controller)) {
 echo "<h3>2. Creating Direct Webhook Endpoint</h3>";
 
 // Create a direct webhook file that bypasses Joomla authentication
-$webhook_endpoint = '<?php
+$webhook_endpoint = <<<'WEBHOOK'
+<?php
 /**
  * Direct Webhook Endpoint - No Authentication Required
  * URL: /webhook_produccion.php
@@ -256,17 +257,16 @@ if (!defined(\'_JDEFINES\')) {
 
 require_once JPATH_BASE . \'/includes/framework.php';
 
-// Get Factory class
-$factoryClass = \'Joomla\' . \'\\\\CMS\\\\Factory\';
+use Joomla\CMS\Factory;
 
 // Create application
-$app = $factoryClass::getApplication(\'site\');
+$app = Factory::getApplication('site');
 
 // Set JSON response header
-header(\'Content-Type: application/json\');
+header('Content-Type: application/json');
 
 // Log file
-$logFile = JPATH_ADMINISTRATOR . \'/logs/webhook.log\';
+$logFile = JPATH_ADMINISTRATOR . '/logs/webhook.log';
 
 try {
     // Get request data
@@ -295,7 +295,7 @@ try {
     file_put_contents($logFile, $logMessage, FILE_APPEND | LOCK_EX);
     
     // Get database
-    $db = $factoryClass::getDbo();
+    $db = Factory::getDbo();
     
     // Process webhook data
     if (!empty($data[\'orden_de_trabajo\'])) {
@@ -427,7 +427,7 @@ try {
 }
 
 $app->close();
-?>';
+WEBHOOK;
 
 $webhook_file = $joomla_root . '/webhook_produccion.php';
 if (file_put_contents($webhook_file, $webhook_endpoint)) {
