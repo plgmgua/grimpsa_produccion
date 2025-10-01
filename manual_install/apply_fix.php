@@ -233,7 +233,46 @@ if (file_put_contents($controller_file, $webhook_controller)) {
     echo "<div class='error'>❌ Failed to create site webhook controller</div>";
 }
 
-echo "<h3>2. Creating Enhanced Webhook Template</h3>";
+echo "<h3>2. Creating Site Entry Point</h3>";
+
+// Create site entry point that properly handles webhook routing
+$site_entry = '<?php
+defined(\'_JEXEC\') or die;
+
+use Joomla\\CMS\\Factory;
+use Joomla\\CMS\\MVC\\Controller\\BaseController;
+
+// Get the application
+$app = Factory::getApplication();
+
+// Get the task
+$task = $app->input->getCmd(\'task\', \'\');
+
+// If this is a webhook request, handle it directly without authentication
+if (strpos($task, \'webhook.receive\') !== false || strpos($task, \'webhook.\') !== false) {
+    // Create webhook controller
+    $controller = new Joomla\\Component\\Produccion\\Site\\Controller\\WebhookController();
+    
+    // Execute receive task
+    $controller->execute(\'receive\');
+    $controller->redirect();
+    
+    $app->close();
+} else {
+    // Normal component routing
+    $controller = BaseController::getInstance(\'Produccion\');
+    $controller->execute($app->input->getCmd(\'task\'));
+    $controller->redirect();
+}';
+
+$site_entry_file = $site_path . '/produccion.php';
+if (file_put_contents($site_entry_file, $site_entry)) {
+    echo "<div class='success'>✅ Updated site entry point</div>";
+} else {
+    echo "<div class='error'>❌ Failed to update site entry point</div>";
+}
+
+echo "<h3>3. Creating Enhanced Webhook Template</h3>";
 
 // Create enhanced webhook template with copy button and Postman export
 $webhook_template = '<?php
