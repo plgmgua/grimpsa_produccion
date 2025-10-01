@@ -93,6 +93,13 @@ try {
         'get_data' => $_GET
     ]);
     
+    // Log successful receipt
+    logWebhook('Webhook Data Validated', [
+        'has_orden_de_trabajo' => !empty($data['orden_de_trabajo']),
+        'orden_de_trabajo' => $data['orden_de_trabajo'] ?? 'NOT PROVIDED',
+        'full_payload' => $data
+    ]);
+    
     // Get database directly without application
     $db = Joomla\CMS\Factory::getDbo();
     
@@ -157,49 +164,13 @@ try {
             $ordenId = $db->insertid();
         }
         
-        // Process info/attributes
+        // Log info attributes (don't save to DB yet - just log for review)
         if (!empty($data['info']) && is_array($data['info'])) {
-            logWebhook('Processing info attributes', ['count' => count($data['info'])]);
-            
-            foreach ($data['info'] as $key => $value) {
-                // Check if attribute exists
-                $query = $db->getQuery(true)
-                    ->select('id')
-                    ->from($db->quoteName('#__produccion_ordenes_info'))
-                    ->where($db->quoteName('orden_id') . ' = ' . (int)$ordenId)
-                    ->where($db->quoteName('attribute_key') . ' = ' . $db->quote($key));
-                
-                $db->setQuery($query);
-                $attrId = $db->loadResult();
-                
-                if ($attrId) {
-                    // Update attribute
-                    $query = $db->getQuery(true)
-                        ->update($db->quoteName('#__produccion_ordenes_info'))
-                        ->set($db->quoteName('attribute_value') . ' = ' . $db->quote($value))
-                        ->where($db->quoteName('id') . ' = ' . (int)$attrId);
-                    
-                    $db->setQuery($query);
-                    $db->execute();
-                } else {
-                    // Insert attribute
-                    $query = $db->getQuery(true)
-                        ->insert($db->quoteName('#__produccion_ordenes_info'))
-                        ->columns([
-                            $db->quoteName('orden_id'),
-                            $db->quoteName('attribute_key'),
-                            $db->quoteName('attribute_value')
-                        ])
-                        ->values(
-                            (int)$ordenId . ', ' .
-                            $db->quote($key) . ', ' .
-                            $db->quote($value)
-                        );
-                    
-                    $db->setQuery($query);
-                    $db->execute();
-                }
-            }
+            logWebhook('INFO Attributes Received', [
+                'orden_id' => $ordenId,
+                'attributes_count' => count($data['info']),
+                'attributes' => $data['info']
+            ]);
         }
         
         // Log success
