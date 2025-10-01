@@ -1209,7 +1209,39 @@ echo "<div class='info'>
     </ul>
 </div>";
 
-echo "<h3>7. Creating Menu Item Type XML</h3>";
+echo "<h3>7. Creating Site Entry Point</h3>";
+
+// Create proper site entry point
+$site_entry = <<<'ENDSITEENTRY'
+<?php
+defined('_JEXEC') or die;
+
+use Joomla\CMS\Factory;
+use Joomla\CMS\MVC\Controller\BaseController;
+
+// Get the application
+$app = Factory::getApplication();
+$input = $app->input;
+
+// Get controller
+$controller = BaseController::getInstance('Produccion', ['base_path' => JPATH_COMPONENT]);
+
+// Perform the request task
+$controller->execute($input->getCmd('task', 'display'));
+
+// Redirect if set by the controller
+$controller->redirect();
+ENDSITEENTRY;
+
+$site_entry_file = $site_path . '/produccion.php';
+
+if (file_put_contents($site_entry_file, $site_entry)) {
+    echo "<div class='success'>✅ Created site entry point</div>";
+} else {
+    echo "<div class='error'>❌ Failed to create site entry point</div>";
+}
+
+echo "<h3>8. Creating Menu Item Type XML</h3>";
 
 // Create menu item type XML for Joomla's menu manager
 $menu_xml = <<<'ENDMENUXML'
@@ -1324,7 +1356,29 @@ if (file_exists($config_file)) {
     echo "<div class='info'>ℹ️ Skipped menu item creation (run from Joomla root to create menu)</div>";
 }
 
-echo "<h3>8. How to Add to Your Menu</h3>";
+echo "<h3>9. Clearing Cache</h3>";
+
+// Clear Joomla cache so menu items are recognized
+$cache_dirs = [
+    $joomla_root . '/cache',
+    $joomla_root . '/administrator/cache'
+];
+
+foreach ($cache_dirs as $dir) {
+    if (is_dir($dir)) {
+        $files = glob($dir . '/*');
+        $count = 0;
+        foreach ($files as $file) {
+            if (is_file($file)) {
+                unlink($file);
+                $count++;
+            }
+        }
+        echo "<div class='success'>✅ Cleared $count files from " . basename($dir) . "</div>";
+    }
+}
+
+echo "<h3>10. How to Add to Your Menu</h3>";
 
 echo "<div class='info'>
     <p><strong>Option 1: Use the Auto-Created Menu Item</strong></p>
