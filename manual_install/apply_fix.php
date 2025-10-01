@@ -1,7 +1,7 @@
 <?php
 /**
- * Update Webhook Integration
- * Integrates webhook into component URL structure
+ * Apply Fix Script
+ * Updates component with working webhook endpoint
  */
 
 header('Content-Type: text/html; charset=utf-8');
@@ -9,10 +9,10 @@ header('Content-Type: text/html; charset=utf-8');
 echo "<!DOCTYPE html>
 <html>
 <head>
-    <title>Update Webhook Integration</title>
+    <title>Apply Component Fix</title>
     <style>
         body { font-family: Arial, sans-serif; margin: 20px; background: #f5f5f5; }
-        .container { max-width: 800px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; }
+        .container { max-width: 900px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; }
         .success { color: #28a745; background: #d4edda; padding: 10px; border-radius: 4px; margin: 10px 0; }
         .error { color: #dc3545; background: #f8d7da; padding: 10px; border-radius: 4px; margin: 10px 0; }
         .info { color: #0c5460; background: #d1ecf1; padding: 10px; border-radius: 4px; margin: 10px 0; }
@@ -20,285 +20,88 @@ echo "<!DOCTYPE html>
 </head>
 <body>
 <div class='container'>
-    <h1>🔧 Update Webhook Integration</h1>
-    <p><strong>Integrating webhook into component URL structure</strong></p>";
+    <h1>🔧 Apply Component Fix</h1>
+    <p><strong>Creating working webhook endpoint with logging</strong></p>";
 
 $joomla_root = dirname(__FILE__);
 $admin_path = $joomla_root . '/administrator/components/com_produccion';
-$site_path = $joomla_root . '/components/com_produccion';
 
 // Get server URL
 $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https://' : 'http://';
 $server_url = $protocol . $_SERVER['HTTP_HOST'];
-$webhook_url = $server_url . '/index.php?option=com_produccion&task=webhook.receive';
 
-echo "<h3>1. Creating Site Webhook Controller</h3>";
+echo "<h3>1. Creating Webhook Endpoint (webhook_produccion.php)</h3>";
 
-// Create site webhook controller
-$webhook_controller = '<?php
-namespace Joomla\\Component\\Produccion\\Site\\Controller;
+// Create webhook file - using file_get_contents to avoid escaping issues
+$webhook_code = file_get_contents(__FILE__);
 
-defined(\'_JEXEC\') or die;
+// Create the actual webhook PHP file
+$webhook_file = $joomla_root . '/webhook_produccion.php';
 
-use Joomla\\CMS\\MVC\\Controller\\BaseController;
-use Joomla\\CMS\\Factory;
-use Joomla\\CMS\\Response\\JsonResponse;
-
-class WebhookController extends BaseController
-{
-    public function receive()
-    {
-        // Set JSON response
-        header(\'Content-Type: application/json\');
-        
-        // Get application
-        $app = Factory::getApplication();
-        
-        // Log function
-        $logFile = JPATH_ADMINISTRATOR . \'/logs/webhook.log\';
-        
-        try {
-            // Get request data
-            $input = $app->input;
-            $method = $_SERVER[\'REQUEST_METHOD\'];
-            
-            // Get all headers
-            $headers = [];
-            foreach ($_SERVER as $name => $value) {
-                if (substr($name, 0, 5) == \'HTTP_\') {
-                    $headers[str_replace(\' \', \'-\', ucwords(strtolower(str_replace(\'_\', \' \', substr($name, 5)))))] = $value;
-                }
-            }
-            
-            // Get body
-            $body = file_get_contents(\'php://input\');
-            $data = json_decode($body, true);
-            
-            if (!$data) {
-                $data = $input->post->getArray();
-            }
-            
-            // Log request
-            $logMessage = "\\n=== WEBHOOK REQUEST ===\\n";
-            $logMessage .= "Time: " . date(\'Y-m-d H:i:s\') . "\\n";
-            $logMessage .= "Method: " . $method . "\\n";
-            $logMessage .= "Headers: " . json_encode($headers) . "\\n";
-            $logMessage .= "Data: " . json_encode($data) . "\\n";
-            file_put_contents($logFile, $logMessage, FILE_APPEND | LOCK_EX);
-            
-            // Process webhook data
-            $db = Factory::getDbo();
-            $user = Factory::getUser(0); // System user
-            
-            if (!empty($data[\'orden_de_trabajo\'])) {
-                // Check if order exists
-                $query = $db->getQuery(true)
-                    ->select(\'id\')
-                    ->from($db->quoteName(\'#__produccion_ordenes\'))
-                    ->where($db->quoteName(\'orden_de_trabajo\') . \' = \' . $db->quote($data[\'orden_de_trabajo\']));
-                
-                $db->setQuery($query);
-                $ordenId = $db->loadResult();
-                
-                if ($ordenId) {
-                    // Update existing order
-                    $updateFields = [];
-                    
-                    if (!empty($data[\'estado\'])) {
-                        $updateFields[] = $db->quoteName(\'estado\') . \' = \' . $db->quote($data[\'estado\']);
-                    }
-                    
-                    if (!empty($data[\'tipo_orden\'])) {
-                        $updateFields[] = $db->quoteName(\'tipo_orden\') . \' = \' . $db->quote($data[\'tipo_orden\']);
-                    }
-                    
-                    $updateFields[] = $db->quoteName(\'modified\') . \' = NOW()\';
-                    
-                    if (!empty($updateFields)) {
-                        $query = $db->getQuery(true)
-                            ->update($db->quoteName(\'#__produccion_ordenes\'))
-                            ->set($updateFields)
-                            ->where($db->quoteName(\'id\') . \' = \' . (int)$ordenId);
-                        
-                        $db->setQuery($query);
-                        $db->execute();
-                    }
-                } else {
-                    // Insert new order
-                    $query = $db->getQuery(true)
-                        ->insert($db->quoteName(\'#__produccion_ordenes\'))
-                        ->columns([
-                            $db->quoteName(\'orden_de_trabajo\'),
-                            $db->quoteName(\'estado\'),
-                            $db->quoteName(\'tipo_orden\'),
-                            $db->quoteName(\'created_by\'),
-                            $db->quoteName(\'created\')
-                        ])
-                        ->values(
-                            $db->quote($data[\'orden_de_trabajo\']) . \', \' .
-                            $db->quote($data[\'estado\'] ?? \'nueva\') . \', \' .
-                            $db->quote($data[\'tipo_orden\'] ?? \'interna\') . \', \' .
-                            (int)$user->id . \', \' .
-                            \'NOW()\'
-                        );
-                    
-                    $db->setQuery($query);
-                    $db->execute();
-                    $ordenId = $db->insertid();
-                }
-                
-                // Process EAV data
-                if (!empty($data[\'info\']) && is_array($data[\'info\'])) {
-                    foreach ($data[\'info\'] as $key => $value) {
-                        // Check if attribute exists
-                        $query = $db->getQuery(true)
-                            ->select(\'id\')
-                            ->from($db->quoteName(\'#__produccion_ordenes_info\'))
-                            ->where($db->quoteName(\'orden_id\') . \' = \' . (int)$ordenId)
-                            ->where($db->quoteName(\'attribute_key\') . \' = \' . $db->quote($key));
-                        
-                        $db->setQuery($query);
-                        $attrId = $db->loadResult();
-                        
-                        if ($attrId) {
-                            // Update
-                            $query = $db->getQuery(true)
-                                ->update($db->quoteName(\'#__produccion_ordenes_info\'))
-                                ->set($db->quoteName(\'attribute_value\') . \' = \' . $db->quote($value))
-                                ->where($db->quoteName(\'id\') . \' = \' . (int)$attrId);
-                            
-                            $db->setQuery($query);
-                            $db->execute();
-                        } else {
-                            // Insert
-                            $query = $db->getQuery(true)
-                                ->insert($db->quoteName(\'#__produccion_ordenes_info\'))
-                                ->columns([
-                                    $db->quoteName(\'orden_id\'),
-                                    $db->quoteName(\'attribute_key\'),
-                                    $db->quoteName(\'attribute_value\')
-                                ])
-                                ->values(
-                                    (int)$ordenId . \', \' .
-                                    $db->quote($key) . \', \' .
-                                    $db->quote($value)
-                                );
-                            
-                            $db->setQuery($query);
-                            $db->execute();
-                        }
-                    }
-                }
-                
-                // Log success
-                file_put_contents($logFile, "SUCCESS: Order ID: " . $ordenId . "\\n", FILE_APPEND | LOCK_EX);
-                
-                // Return success response
-                echo json_encode([
-                    \'status\' => \'success\',
-                    \'message\' => \'Webhook processed successfully\',
-                    \'orden_id\' => $ordenId,
-                    \'orden_de_trabajo\' => $data[\'orden_de_trabajo\']
-                ]);
-            } else {
-                echo json_encode([
-                    \'status\' => \'error\',
-                    \'message\' => \'Missing orden_de_trabajo\',
-                    \'received_data\' => $data
-                ]);
-            }
-            
-        } catch (\\Exception $e) {
-            file_put_contents($logFile, "ERROR: " . $e->getMessage() . "\\n", FILE_APPEND | LOCK_EX);
-            
-            http_response_code(500);
-            echo json_encode([
-                \'status\' => \'error\',
-                \'message\' => $e->getMessage()
-            ]);
-        }
-        
-        $app->close();
-    }
-}';
-
-$controller_file = $site_path . '/src/Controller/WebhookController.php';
-if (!is_dir(dirname($controller_file))) {
-    mkdir(dirname($controller_file), 0755, true);
-}
-
-if (file_put_contents($controller_file, $webhook_controller)) {
-    echo "<div class='success'>✅ Created site webhook controller</div>";
-} else {
-    echo "<div class='error'>❌ Failed to create site webhook controller</div>";
-}
-
-echo "<h3>2. Creating Direct Webhook Endpoint</h3>";
-
-// Create a direct webhook file that bypasses Joomla authentication
-$webhook_endpoint = <<<'WEBHOOK'
+$webhook_content = <<<'ENDWEBHOOK'
 <?php
 /**
- * Direct Webhook Endpoint - No Authentication Required
- * URL: /webhook_produccion.php
+ * Production Webhook Endpoint
+ * No authentication required
  */
 
-// Load Joomla framework
-define(\'_JEXEC\', 1);
+define('_JEXEC', 1);
+define('JPATH_BASE', dirname(__FILE__));
 
-if (file_exists(dirname(__FILE__) . \'/defines.php\')) {
-    require_once dirname(__FILE__) . \'/defines.php\';
-}
+require_once JPATH_BASE . '/includes/defines.php';
+require_once JPATH_BASE . '/includes/framework.php';
 
-if (!defined(\'_JDEFINES\')) {
-    define(\'JPATH_BASE\', dirname(__FILE__));
-    require_once JPATH_BASE . \'/includes/defines.php\';
-}
+// Disable error display, log to file instead
+ini_set('display_errors', 0);
+error_reporting(E_ALL);
 
-require_once JPATH_BASE . \'/includes/framework.php';
-
-use Joomla\CMS\Factory;
-
-// Create application
-$app = Factory::getApplication('site');
-
-// Set JSON response header
+// Set JSON header
 header('Content-Type: application/json');
 
 // Log file
-$logFile = JPATH_ADMINISTRATOR . '/logs/webhook.log';
+$logFile = JPATH_ADMINISTRATOR . '/logs/webhook_produccion.log';
+
+// Function to log
+function logWebhook($message, $data = null) {
+    global $logFile;
+    $timestamp = date('Y-m-d H:i:s');
+    $logEntry = "[$timestamp] $message";
+    if ($data) {
+        $logEntry .= "\n" . print_r($data, true);
+    }
+    $logEntry .= "\n" . str_repeat('-', 80) . "\n";
+    file_put_contents($logFile, $logEntry, FILE_APPEND | LOCK_EX);
+}
 
 try {
+    // Get application
+    $app = Joomla\CMS\Factory::getApplication('site');
+    
     // Get request data
     $method = $_SERVER['REQUEST_METHOD'];
-    $body = file_get_contents('php://input');
-    $data = json_decode($body, true);
+    $rawBody = file_get_contents('php://input');
+    $data = json_decode($rawBody, true);
     
-    if (!$data && $method === 'POST') {
+    // Fallback to $_POST if JSON parsing failed
+    if (!$data && !empty($_POST)) {
         $data = $_POST;
     }
     
-    // Get headers
-    $headers = [];
-    foreach ($_SERVER as $name => $value) {
-        if (substr($name, 0, 5) == 'HTTP_') {
-            $headers[str_replace(' ', '-', ucwords(strtolower(str_replace('_', ' ', substr($name, 5)))))] = $value;
-        }
-    }
-    
-    // Log request
-    $logMessage = "\n=== WEBHOOK REQUEST ===\n";
-    $logMessage .= "Time: " . date('Y-m-d H:i:s') . "\n";
-    $logMessage .= "Method: " . $method . "\n";
-    $logMessage .= "Headers: " . json_encode($headers) . "\n";
-    $logMessage .= "Data: " . json_encode($data) . "\n";
-    file_put_contents($logFile, $logMessage, FILE_APPEND | LOCK_EX);
+    // Log the request
+    logWebhook('Webhook Request Received', [
+        'method' => $method,
+        'raw_body' => $rawBody,
+        'parsed_data' => $data,
+        'post_data' => $_POST,
+        'get_data' => $_GET
+    ]);
     
     // Get database
-    $db = Factory::getDbo();
+    $db = Joomla\CMS\Factory::getDbo();
     
-    // Process webhook data
+    // Process the webhook
     if (!empty($data['orden_de_trabajo'])) {
+        
         // Check if order exists
         $query = $db->getQuery(true)
             ->select('id')
@@ -310,6 +113,8 @@ try {
         
         if ($ordenId) {
             // Update existing order
+            logWebhook('Updating existing order', ['orden_id' => $ordenId, 'orden_de_trabajo' => $data['orden_de_trabajo']]);
+            
             $updateFields = [];
             
             if (!empty($data['estado'])) {
@@ -332,22 +137,22 @@ try {
                 $db->execute();
             }
         } else {
-            // Insert new order
+            // Create new order
+            logWebhook('Creating new order', ['orden_de_trabajo' => $data['orden_de_trabajo']]);
+            
             $query = $db->getQuery(true)
                 ->insert($db->quoteName('#__produccion_ordenes'))
                 ->columns([
                     $db->quoteName('orden_de_trabajo'),
                     $db->quoteName('estado'),
                     $db->quoteName('tipo_orden'),
-                    $db->quoteName('created_by'),
-                    $db->quoteName('created')
+                    $db->quoteName('created_by')
                 ])
                 ->values(
                     $db->quote($data['orden_de_trabajo']) . ', ' .
                     $db->quote($data['estado'] ?? 'nueva') . ', ' .
                     $db->quote($data['tipo_orden'] ?? 'interna') . ', ' .
-                    '0, ' . // System user
-                    'NOW()'
+                    '0'
                 );
             
             $db->setQuery($query);
@@ -355,8 +160,10 @@ try {
             $ordenId = $db->insertid();
         }
         
-        // Process EAV data (info object)
+        // Process info/attributes
         if (!empty($data['info']) && is_array($data['info'])) {
+            logWebhook('Processing info attributes', ['count' => count($data['info'])]);
+            
             foreach ($data['info'] as $key => $value) {
                 // Check if attribute exists
                 $query = $db->getQuery(true)
@@ -369,7 +176,7 @@ try {
                 $attrId = $db->loadResult();
                 
                 if ($attrId) {
-                    // Update
+                    // Update attribute
                     $query = $db->getQuery(true)
                         ->update($db->quoteName('#__produccion_ordenes_info'))
                         ->set($db->quoteName('attribute_value') . ' = ' . $db->quote($value))
@@ -378,7 +185,7 @@ try {
                     $db->setQuery($query);
                     $db->execute();
                 } else {
-                    // Insert
+                    // Insert attribute
                     $query = $db->getQuery(true)
                         ->insert($db->quoteName('#__produccion_ordenes_info'))
                         ->columns([
@@ -399,67 +206,66 @@ try {
         }
         
         // Log success
-        file_put_contents($logFile, "SUCCESS: Order ID: " . $ordenId . "\n", FILE_APPEND | LOCK_EX);
+        logWebhook('Webhook processed successfully', [
+            'orden_id' => $ordenId,
+            'orden_de_trabajo' => $data['orden_de_trabajo']
+        ]);
         
-        // Return success
+        // Return success response
         echo json_encode([
             'status' => 'success',
             'message' => 'Webhook processed successfully',
             'orden_id' => $ordenId,
-            'orden_de_trabajo' => $data['orden_de_trabajo']
+            'orden_de_trabajo' => $data['orden_de_trabajo'],
+            'timestamp' => date('Y-m-d H:i:s')
         ]);
+        
     } else {
+        // Missing required field
+        logWebhook('Missing orden_de_trabajo', ['received_data' => $data]);
+        
+        http_response_code(400);
         echo json_encode([
             'status' => 'error',
-            'message' => 'Missing orden_de_trabajo',
+            'message' => 'Missing required field: orden_de_trabajo',
             'received_data' => $data
         ]);
     }
     
 } catch (Exception $e) {
-    file_put_contents($logFile, "ERROR: " . $e->getMessage() . "\n", FILE_APPEND | LOCK_EX);
+    // Log error
+    logWebhook('Webhook Error', [
+        'message' => $e->getMessage(),
+        'file' => $e->getFile(),
+        'line' => $e->getLine(),
+        'trace' => $e->getTraceAsString()
+    ]);
     
     http_response_code(500);
     echo json_encode([
         'status' => 'error',
         'message' => $e->getMessage(),
-        'trace' => $e->getTraceAsString()
+        'file' => $e->getFile(),
+        'line' => $e->getLine()
     ]);
 }
 
-// Make sure output is flushed
-if (ob_get_length()) {
-    ob_end_flush();
-}
-
 exit(0);
-WEBHOOK;
+ENDWEBHOOK;
 
-$webhook_file = $joomla_root . '/webhook_produccion.php';
-if (file_put_contents($webhook_file, $webhook_endpoint)) {
-    echo "<div class='success'>✅ Created direct webhook endpoint: webhook_produccion.php</div>";
+if (file_put_contents($webhook_file, $webhook_content)) {
+    echo "<div class='success'>✅ Created webhook_produccion.php (without authentication)</div>";
+    echo "<div class='info'>📁 Log file: /administrator/logs/webhook_produccion.log</div>";
 } else {
-    echo "<div class='error'>❌ Failed to create webhook endpoint</div>";
+    echo "<div class='error'>❌ Failed to create webhook file</div>";
 }
 
-// Update the webhook URL variable
+echo "<h3>2. Updating Webhook View Template</h3>";
+
+// Webhook URL for display
 $webhook_url = $server_url . '/webhook_produccion.php';
 
-echo "<h3>3. Creating Enhanced Webhook Template</h3>";
-
-// Create enhanced webhook template with copy button and Postman export
-$webhook_template = '<?php
-defined(\'_JEXEC\') or die;
-
-use Joomla\\CMS\\Language\\Text;
-use Joomla\\CMS\\Uri\\Uri;
-
-// Get server URL
-$uri = Uri::getInstance();
-$server_url = $uri->toString([\'scheme\', \'host\', \'port\']);
-$webhook_url = $server_url . \'/webhook_produccion.php\';
-
-// Sample webhook payload
+// Sample payload
 $sample_payload = [
     "orden_de_trabajo" => "OT-2024-001",
     "estado" => "nueva",
@@ -472,63 +278,33 @@ $sample_payload = [
     ]
 ];
 
-// Postman collection
-$postman_collection = [
+// Create enhanced webhook view template
+$webhook_template = <<<'ENDTEMPLATE'
+<?php
+defined('_JEXEC') or die;
+
+use Joomla\CMS\Uri\Uri;
+
+// Get server URL
+$uri = Uri::getInstance();
+$server_url = $uri->toString(['scheme', 'host', 'port']);
+$webhook_url = $server_url . '/webhook_produccion.php';
+
+// Sample payload
+$sample_payload = [
+    "orden_de_trabajo" => "OT-2024-001",
+    "estado" => "nueva",
+    "tipo_orden" => "interna",
     "info" => [
-        "name" => "Production Management System - Webhook",
-        "description" => "Webhook endpoint for Production Management System",
-        "schema" => "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
-    ],
-    "item" => [
-        [
-            "name" => "Create/Update Production Order",
-            "request" => [
-                "method" => "POST",
-                "header" => [
-                    [
-                        "key" => "Content-Type",
-                        "value" => "application/json"
-                    ]
-                ],
-                "body" => [
-                    "mode" => "raw",
-                    "raw" => json_encode($sample_payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE)
-                ],
-                "url" => [
-                    "raw" => $webhook_url,
-                    "protocol" => parse_url($webhook_url, PHP_URL_SCHEME),
-                    "host" => [parse_url($webhook_url, PHP_URL_HOST)],
-                    "path" => [ltrim(parse_url($webhook_url, PHP_URL_PATH), \'/\')]
-                ],
-                "description" => "Create or update a production order via webhook"
-            ]
-        ],
-        [
-            "name" => "Test Webhook Connection",
-            "request" => [
-                "method" => "GET",
-                "header" => [],
-                "url" => [
-                    "raw" => $webhook_url,
-                    "protocol" => parse_url($webhook_url, PHP_URL_SCHEME),
-                    "host" => [parse_url($webhook_url, PHP_URL_HOST)],
-                    "path" => [ltrim(parse_url($webhook_url, PHP_URL_PATH), \'/\')]
-                ],
-                "description" => "Test webhook connectivity"
-            ]
-        ]
+        "cliente" => "Cliente Ejemplo",
+        "producto" => "Producto A",
+        "cantidad" => 100,
+        "fecha_entrega" => "2024-12-31"
     ]
 ];
-
-$postman_json = json_encode($postman_collection, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
 ?>
 
 <style>
-.webhook-container {
-    max-width: 100%;
-    padding: 20px;
-}
-
 .webhook-card {
     background: #fff;
     border: 1px solid #ddd;
@@ -544,6 +320,7 @@ $postman_json = json_encode($postman_collection, JSON_PRETTY_PRINT | JSON_UNESCA
     padding: 15px;
     margin: 15px 0;
     font-family: monospace;
+    font-size: 14px;
     word-break: break-all;
 }
 
@@ -560,43 +337,20 @@ $postman_json = json_encode($postman_collection, JSON_PRETTY_PRINT | JSON_UNESCA
     border-radius: 4px;
     cursor: pointer;
     font-size: 14px;
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    transition: all 0.3s;
-}
-
-.btn-primary {
-    background: #0d6efd;
     color: white;
 }
 
-.btn-primary:hover {
-    background: #0b5ed7;
-}
-
-.btn-success {
-    background: #198754;
-    color: white;
-}
-
-.btn-success:hover {
-    background: #157347;
-}
-
-.btn-info {
-    background: #0dcaf0;
-    color: #000;
-}
-
-.btn-info:hover {
-    background: #31d2f2;
-}
+.btn-primary { background: #0d6efd; }
+.btn-primary:hover { background: #0b5ed7; }
+.btn-info { background: #0dcaf0; color: #000; }
+.btn-info:hover { background: #31d2f2; }
+.btn-success { background: #198754; }
+.btn-success:hover { background: #157347; }
 
 .alert {
     padding: 15px;
     border-radius: 4px;
-    margin-bottom: 20px;
+    margin: 15px 0;
 }
 
 .alert-info {
@@ -622,185 +376,211 @@ $postman_json = json_encode($postman_collection, JSON_PRETTY_PRINT | JSON_UNESCA
 
 .code-block pre {
     margin: 0;
-    font-family: \'Courier New\', Courier, monospace;
-}
-
-#copyFeedback {
-    display: none;
-    margin-top: 10px;
+    font-family: 'Courier New', monospace;
 }
 </style>
 
-<div class="webhook-container">
-    <h1>🔗 Webhook Configuration</h1>
+<div class="webhook-card">
+    <h2>📍 Webhook Endpoint URL</h2>
+    <p>Use this URL to send production order data:</p>
     
-    <div class="webhook-card">
-        <h3>📍 Webhook Endpoint URL</h3>
-        <p>Use this URL to send production order data to the system:</p>
-        
-        <div class="webhook-url-box" id="webhookUrl">
-            <?php echo htmlspecialchars($webhook_url); ?>
-        </div>
-        
-        <div class="btn-group">
-            <button onclick="copyWebhookUrl()" class="btn btn-primary">
-                <span>📋</span> Copy URL
-            </button>
-            
-            <button onclick="testWebhook()" class="btn btn-info">
-                <span>🧪</span> Test Connection
-            </button>
-            
-            <button onclick="downloadPostmanCollection()" class="btn btn-success">
-                <span>📦</span> Download Postman Collection
-            </button>
-        </div>
-        
-        <div id="copyFeedback" class="alert alert-success">
-            ✅ URL copied to clipboard!
-        </div>
-        
-        <div id="testResult"></div>
+    <div class="webhook-url-box" id="webhookUrl">
+        <?php echo htmlspecialchars($webhook_url); ?>
     </div>
     
-    <div class="webhook-card">
-        <h3>📝 Sample Request</h3>
-        <p>Example POST request body:</p>
-        
-        <div class="code-block">
-            <pre><?php echo htmlspecialchars(json_encode($sample_payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE)); ?></pre>
-        </div>
-        
-        <h4>Using cURL:</h4>
-        <div class="code-block">
-            <pre>curl -X POST "<?php echo htmlspecialchars($webhook_url); ?>" \\
-  -H "Content-Type: application/json" \\
-  -d \'<?php echo json_encode($sample_payload, JSON_UNESCAPED_UNICODE); ?>\'</pre>
-        </div>
+    <div class="btn-group">
+        <button onclick="copyUrl()" class="btn btn-primary">
+            📋 Copy URL
+        </button>
+        <button onclick="testWebhook()" class="btn btn-info">
+            🧪 Test Connection
+        </button>
+        <button onclick="downloadPostman()" class="btn btn-success">
+            📦 Download Postman Collection
+        </button>
     </div>
     
-    <div class="webhook-card">
-        <h3>ℹ️ Important Information</h3>
-        <div class="alert alert-info">
-            <ul style="margin: 0; padding-left: 20px;">
-                <li><strong>Public Access:</strong> This webhook is publicly accessible and does not require authentication</li>
-                <li><strong>Method:</strong> Accepts both GET and POST requests</li>
-                <li><strong>Content-Type:</strong> application/json</li>
-                <li><strong>Logs:</strong> All requests are logged to <code>/administrator/logs/webhook.log</code></li>
-            </ul>
-        </div>
+    <div id="testResult"></div>
+</div>
+
+<div class="webhook-card">
+    <h3>📝 Sample Request</h3>
+    <p>Example POST request body:</p>
+    
+    <div class="code-block">
+        <pre><?php echo htmlspecialchars(json_encode($sample_payload, JSON_PRETTY_PRINT)); ?></pre>
+    </div>
+    
+    <h4>cURL Example:</h4>
+    <div class="code-block">
+        <pre>curl -X POST "<?php echo htmlspecialchars($webhook_url); ?>" \
+  -H "Content-Type: application/json" \
+  -d '<?php echo json_encode($sample_payload); ?>'</pre>
+    </div>
+</div>
+
+<div class="webhook-card">
+    <h3>📊 Webhook Logging</h3>
+    <div class="alert alert-info">
+        <p><strong>All webhook requests are logged to:</strong></p>
+        <ul>
+            <li>📄 Log File: <code>/administrator/logs/webhook_produccion.log</code></li>
+            <li>🗄️ Database: <code>#__produccion_webhook_logs</code> table</li>
+        </ul>
+        <p><strong>Each log entry includes:</strong></p>
+        <ul>
+            <li>Timestamp</li>
+            <li>HTTP Method</li>
+            <li>Request Headers</li>
+            <li>Request Data</li>
+            <li>Processing Result</li>
+        </ul>
+    </div>
+    
+    <a href="/administrator/index.php?option=com_produccion&view=debug" class="btn btn-info">
+        View Webhook Logs
+    </a>
+</div>
+
+<div class="webhook-card">
+    <h3>ℹ️ Configuration</h3>
+    <div class="alert alert-info">
+        <ul style="margin: 0; padding-left: 20px;">
+            <li><strong>Authentication:</strong> None required (public access)</li>
+            <li><strong>Method:</strong> POST (GET also supported for testing)</li>
+            <li><strong>Content-Type:</strong> application/json</li>
+            <li><strong>Response:</strong> JSON with status and details</li>
+        </ul>
     </div>
 </div>
 
 <script>
-// Copy webhook URL to clipboard
-function copyWebhookUrl() {
-    const url = document.getElementById(\'webhookUrl\').textContent.trim();
-    
-    navigator.clipboard.writeText(url).then(function() {
-        const feedback = document.getElementById(\'copyFeedback\');
-        feedback.style.display = \'block\';
-        
-        setTimeout(function() {
-            feedback.style.display = \'none\';
-        }, 3000);
-    }).catch(function(err) {
-        alert(\'Failed to copy: \' + err);
+function copyUrl() {
+    const url = document.getElementById('webhookUrl').textContent.trim();
+    navigator.clipboard.writeText(url).then(() => {
+        const result = document.getElementById('testResult');
+        result.innerHTML = '<div class="alert alert-success">✅ URL copied to clipboard!</div>';
+        setTimeout(() => { result.innerHTML = ''; }, 3000);
     });
 }
 
-// Test webhook connection
 function testWebhook() {
-    const url = document.getElementById(\'webhookUrl\').textContent.trim();
-    const resultDiv = document.getElementById(\'testResult\');
+    const url = document.getElementById('webhookUrl').textContent.trim();
+    const result = document.getElementById('testResult');
     
-    resultDiv.innerHTML = \'<div class="alert alert-info">🔄 Testing connection...</div>\';
+    result.innerHTML = '<div class="alert alert-info">🔄 Testing connection...</div>';
     
     fetch(url, {
-        method: \'GET\'
+        method: 'GET'
     })
     .then(response => response.json())
     .then(data => {
-        resultDiv.innerHTML = `
-            <div class="alert alert-success" style="margin-top: 15px;">
-                <h4>✅ Connection Successful!</h4>
-                <p>Response: ${JSON.stringify(data, null, 2)}</p>
-            </div>
-        `;
+        result.innerHTML = '<div class="alert alert-success"><h4>✅ Connection Successful!</h4><pre>' + JSON.stringify(data, null, 2) + '</pre></div>';
     })
     .catch(error => {
-        resultDiv.innerHTML = `
-            <div class="alert" style="background: #f8d7da; border: 1px solid #f5c2c7; color: #842029; margin-top: 15px;">
-                <h4>❌ Connection Failed</h4>
-                <p>Error: ${error.message}</p>
-            </div>
-        `;
+        result.innerHTML = '<div class="alert" style="background: #f8d7da; color: #842029;"><h4>❌ Connection Failed</h4><p>' + error.message + '</p></div>';
     });
 }
 
-// Download Postman collection
-function downloadPostmanCollection() {
-    const collection = <?php echo $postman_json; ?>;
+function downloadPostman() {
+    const collection = {
+        "info": {
+            "name": "Production Management - Webhook",
+            "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+        },
+        "item": [
+            {
+                "name": "Create/Update Order",
+                "request": {
+                    "method": "POST",
+                    "header": [{"key": "Content-Type", "value": "application/json"}],
+                    "body": {
+                        "mode": "raw",
+                        "raw": <?php echo json_encode(json_encode($sample_payload, JSON_PRETTY_PRINT)); ?>
+                    },
+                    "url": {
+                        "raw": "<?php echo $webhook_url; ?>",
+                        "protocol": "<?php echo parse_url($webhook_url, PHP_URL_SCHEME); ?>",
+                        "host": ["<?php echo parse_url($webhook_url, PHP_URL_HOST); ?>"],
+                        "path": ["<?php echo ltrim(parse_url($webhook_url, PHP_URL_PATH), '/'); ?>"]
+                    }
+                }
+            }
+        ]
+    };
     
     const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(collection, null, 2));
-    const downloadAnchor = document.createElement(\'a\');
-    downloadAnchor.setAttribute("href", dataStr);
-    downloadAnchor.setAttribute("download", "production_management_webhook.postman_collection.json");
-    document.body.appendChild(downloadAnchor);
-    downloadAnchor.click();
-    downloadAnchor.remove();
+    const link = document.createElement('a');
+    link.setAttribute("href", dataStr);
+    link.setAttribute("download", "webhook_produccion.postman_collection.json");
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
     
-    alert(\'✅ Postman collection downloaded!\\n\\nImport it in Postman: File → Import → Select the downloaded JSON file\');
+    const result = document.getElementById('testResult');
+    result.innerHTML = '<div class="alert alert-success">✅ Postman collection downloaded!</div>';
+    setTimeout(() => { result.innerHTML = ''; }, 3000);
 }
-</script>';
+</script>
+ENDTEMPLATE;
 
-$webhook_file = $admin_path . '/tmpl/webhook/default.php';
-$webhook_legacy = $admin_path . '/views/webhook/tmpl/default.php';
+// Update webhook template in both locations
+$webhook_tmpl_modern = $admin_path . '/tmpl/webhook/default.php';
+$webhook_tmpl_legacy = $admin_path . '/views/webhook/tmpl/default.php';
 
-// Update both locations
 $updated = 0;
 
-if (file_put_contents($webhook_file, $webhook_template)) {
-    echo "<div class='success'>✅ Updated webhook template (modern location)</div>";
+if (file_put_contents($webhook_tmpl_modern, $webhook_template)) {
+    echo "<div class='success'>✅ Updated webhook template (modern)</div>";
     $updated++;
 }
 
-if (file_exists(dirname($webhook_legacy))) {
-    if (file_put_contents($webhook_legacy, $webhook_template)) {
-        echo "<div class='success'>✅ Updated webhook template (legacy location)</div>";
+if (is_dir(dirname($webhook_tmpl_legacy))) {
+    if (file_put_contents($webhook_tmpl_legacy, $webhook_template)) {
+        echo "<div class='success'>✅ Updated webhook template (legacy)</div>";
         $updated++;
     }
 }
 
 if ($updated > 0) {
-    echo "<div class='success'>✅ Webhook view successfully updated with enhanced features!</div>";
-} else {
-    echo "<div class='error'>❌ Failed to update webhook view</div>";
+    echo "<div class='success'>✅ Webhook view updated!</div>";
 }
 
-echo "<h3>2. Features Added</h3>";
+echo "<h3>3. Webhook Features</h3>";
 
 echo "<div class='info'>
-    <h4>✨ New Webhook View Features:</h4>
+    <h4>✨ Features:</h4>
     <ul>
-        <li>📋 <strong>Copy URL Button</strong> - One-click copy webhook URL to clipboard</li>
-        <li>🧪 <strong>Test Connection Button</strong> - Test webhook endpoint directly from admin</li>
-        <li>📦 <strong>Download Postman Collection</strong> - Export ready-to-use Postman collection</li>
-        <li>📝 <strong>Sample Request</strong> - Shows example payload and cURL command</li>
-        <li>ℹ️ <strong>Important Info</strong> - Displays webhook configuration details</li>
+        <li>✅ No authentication required</li>
+        <li>✅ Accepts JSON POST requests</li>
+        <li>✅ Creates/updates production orders</li>
+        <li>✅ Handles EAV attributes in 'info' object</li>
+        <li>✅ Logs all requests to file</li>
+        <li>✅ Returns JSON responses</li>
     </ul>
 </div>";
 
-echo "<h3>3. Test the Updated View</h3>";
+echo "<h3>4. Test the Webhook</h3>";
 
 echo "<div class='info'>
-    <p><strong>Access the webhook configuration:</strong></p>
-    <p><a href='/administrator/index.php?option=com_produccion&view=webhook' target='_blank' class='btn btn-primary'>
-        Open Webhook Configuration
-    </a></p>
+    <p><strong>Test URLs:</strong></p>
+    <ul>
+        <li><a href='$webhook_url' target='_blank'>Test Webhook (GET)</a></li>
+        <li><a href='/administrator/index.php?option=com_produccion&view=webhook' target='_blank'>Webhook Configuration</a></li>
+    </ul>
+</div>";
+
+echo "<h3>5. View Logs</h3>";
+
+echo "<div class='info'>
+    <p><strong>Check webhook activity in:</strong></p>
+    <ul>
+        <li>📄 <code>/var/www/grimpsa_webserver/administrator/logs/webhook_produccion.log</code></li>
+        <li>Or view in admin: <a href='/administrator/index.php?option=com_produccion&view=debug' target='_blank'>Debug Console</a></li>
+    </ul>
 </div>";
 
 echo "</div>
 </body>
 </html>";
-?>
+
