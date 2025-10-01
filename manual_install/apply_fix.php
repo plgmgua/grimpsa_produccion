@@ -256,10 +256,8 @@ if (!defined(\'_JDEFINES\')) {
 
 require_once JPATH_BASE . \'/includes/framework.php';
 
-use Joomla\\CMS\\Factory;
-
-// Create application
-$app = Factory::getApplication(\'site\');
+// Create application (use fully qualified name)
+$app = \\Joomla\\CMS\\Factory::getApplication(\'site\');
 
 // Set JSON response header
 header(\'Content-Type: application/json\');
@@ -294,7 +292,7 @@ try {
     file_put_contents($logFile, $logMessage, FILE_APPEND | LOCK_EX);
     
     // Get database
-    $db = Factory::getDbo();
+    $db = \\Joomla\\CMS\\Factory::getDbo();
     
     // Process webhook data
     if (!empty($data[\'orden_de_trabajo\'])) {
