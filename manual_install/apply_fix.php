@@ -1209,7 +1209,198 @@ echo "<div class='info'>
     </ul>
 </div>";
 
-echo "<h3>7. Creating Site Entry Point</h3>";
+echo "<h3>7. Creating Site Entry Point and Legacy Controller</h3>";
+
+// Create legacy-style site controller
+$site_controller = <<<'ENDLEGACYCONTROLLER'
+<?php
+defined('_JEXEC') or die;
+
+use Joomla\CMS\MVC\Controller\BaseController;
+
+class ProduccionController extends BaseController
+{
+    protected $default_view = 'ordenes';
+    
+    public function display($cachable = false, $urlparams = [])
+    {
+        $this->default_view = $this->input->getCmd('view', 'ordenes');
+        
+        return parent::display($cachable, $urlparams);
+    }
+}
+ENDLEGACYCONTROLLER;
+
+$site_controller_file = $site_path . '/controller.php';
+
+if (file_put_contents($site_controller_file, $site_controller)) {
+    echo "<div class='success'>✅ Created site controller.php</div>";
+} else {
+    echo "<div class='error'>❌ Failed to create site controller</div>";
+}
+
+// Create legacy view class for ordenes
+$legacy_ordenes_view = <<<'ENDLEGACYVIEW'
+<?php
+defined('_JEXEC') or die;
+
+use Joomla\CMS\MVC\View\HtmlView;
+use Joomla\CMS\Factory;
+
+class ProduccionViewOrdenes extends HtmlView
+{
+    protected $items;
+    protected $pagination;
+    protected $state;
+    protected $agents;
+    
+    public function display($tpl = null)
+    {
+        $model = $this->getModel();
+        
+        $this->items = $model->getItems();
+        $this->pagination = $model->getPagination();
+        $this->state = $model->getState();
+        $this->agents = $model->getAgents();
+        
+        parent::display($tpl);
+    }
+}
+ENDLEGACYVIEW;
+
+$legacy_view_dir = $site_path . '/views/ordenes/tmpl';
+if (!is_dir($legacy_view_dir)) {
+    mkdir($legacy_view_dir, 0755, true);
+}
+
+$legacy_view_file = $site_path . '/views/ordenes/view.html.php';
+
+if (file_put_contents($legacy_view_file, $legacy_ordenes_view)) {
+    echo "<div class='success'>✅ Created legacy view class</div>";
+} else {
+    echo "<div class='error'>❌ Failed to create legacy view</div>";
+}
+
+// Copy template to legacy location
+$modern_template = $site_path . '/tmpl/ordenes/default.php';
+$legacy_template = $site_path . '/views/ordenes/tmpl/default.php';
+
+if (file_exists($modern_template)) {
+    copy($modern_template, $legacy_template);
+    echo "<div class='success'>✅ Copied template to legacy location</div>";
+}
+
+// Create legacy model
+$legacy_model = <<<'ENDLEGACYMODEL'
+<?php
+defined('_JEXEC') or die;
+
+use Joomla\CMS\MVC\Model\ListModel;
+use Joomla\CMS\Factory;
+
+class ProduccionModelOrdenes extends ListModel
+{
+    protected function getListQuery()
+    {
+        $db = $this->getDbo();
+        $query = $db->getQuery(true);
+        $user = Factory::getUser();
+        
+        // Select from work orders table
+        $query->select('*')
+              ->from($db->quoteName('joomla_produccion_ordenes'));
+        
+        // Apply filters
+        $search = $this->getState('filter.search');
+        if (!empty($search)) {
+            $search = $db->quote('%' . $db->escape($search, true) . '%');
+            $query->where('(' . 
+                $db->quoteName('orden_de_trabajo') . ' LIKE ' . $search . ' OR ' .
+                $db->quoteName('nombre_del_cliente') . ' LIKE ' . $search . ' OR ' .
+                $db->quoteName('descripcion_de_trabajo') . ' LIKE ' . $search .
+            ')');
+        }
+        
+        // Filter by agent
+        $agent = $this->getState('filter.agent');
+        if (!empty($agent)) {
+            $query->where($db->quoteName('agente_de_ventas') . ' = ' . $db->quote($agent));
+        }
+        
+        // Filter by date range
+        $dateFrom = $this->getState('filter.date_from');
+        if (!empty($dateFrom)) {
+            $query->where($db->quoteName('fecha_de_solicitud') . ' >= ' . $db->quote($dateFrom));
+        }
+        
+        $dateTo = $this->getState('filter.date_to');
+        if (!empty($dateTo)) {
+            $query->where($db->quoteName('fecha_de_solicitud') . ' <= ' . $db->quote($dateTo . ' 23:59:59'));
+        }
+        
+        // Check user permissions
+        $userGroups = $user->getAuthorisedGroups();
+        $adminGroups = [7, 8]; // Super Users group IDs
+        
+        $isAdmin = !empty(array_intersect($userGroups, $adminGroups));
+        
+        if (!$isAdmin) {
+            // Sales agents only see their own orders
+            $query->where($db->quoteName('agente_de_ventas') . ' = ' . $db->quote($user->name));
+        }
+        
+        // Order by newest first
+        $query->order($db->quoteName('orden_de_trabajo') . ' DESC');
+        
+        return $query;
+    }
+    
+    protected function populateState($ordering = null, $direction = null)
+    {
+        $app = Factory::getApplication();
+        
+        // Get filter values
+        $search = $app->getUserStateFromRequest($this->context . '.filter.search', 'filter_search', '', 'string');
+        $this->setState('filter.search', $search);
+        
+        $agent = $app->getUserStateFromRequest($this->context . '.filter.agent', 'filter_agent', '', 'string');
+        $this->setState('filter.agent', $agent);
+        
+        $dateFrom = $app->getUserStateFromRequest($this->context . '.filter.date_from', 'filter_date_from', '', 'string');
+        $this->setState('filter.date_from', $dateFrom);
+        
+        $dateTo = $app->getUserStateFromRequest($this->context . '.filter.date_to', 'filter_date_to', '', 'string');
+        $this->setState('filter.date_to', $dateTo);
+        
+        parent::populateState('orden_de_trabajo', 'DESC');
+    }
+    
+    public function getAgents()
+    {
+        $db = $this->getDbo();
+        $query = $db->getQuery(true)
+            ->select('DISTINCT ' . $db->quoteName('agente_de_ventas'))
+            ->from($db->quoteName('joomla_produccion_ordenes'))
+            ->where($db->quoteName('agente_de_ventas') . ' IS NOT NULL')
+            ->order($db->quoteName('agente_de_ventas') . ' ASC');
+        
+        $db->setQuery($query);
+        return $db->loadColumn();
+    }
+}
+ENDLEGACYMODEL;
+
+$legacy_model_file = $site_path . '/models/ordenes.php';
+
+if (!is_dir(dirname($legacy_model_file))) {
+    mkdir(dirname($legacy_model_file), 0755, true);
+}
+
+if (file_put_contents($legacy_model_file, $legacy_model)) {
+    echo "<div class='success'>✅ Created legacy model</div>";
+} else {
+    echo "<div class='error'>❌ Failed to create legacy model</div>";
+}
 
 // Create proper site entry point
 $site_entry = <<<'ENDSITEENTRY'
@@ -1219,17 +1410,13 @@ defined('_JEXEC') or die;
 use Joomla\CMS\Factory;
 use Joomla\CMS\MVC\Controller\BaseController;
 
-// Get the application
-$app = Factory::getApplication();
-$input = $app->input;
-
 // Get controller
-$controller = BaseController::getInstance('Produccion', ['base_path' => JPATH_COMPONENT]);
+$controller = BaseController::getInstance('Produccion');
 
-// Perform the request task
-$controller->execute($input->getCmd('task', 'display'));
+// Execute the task
+$controller->execute(Factory::getApplication()->input->getCmd('task'));
 
-// Redirect if set by the controller
+// Redirect if set
 $controller->redirect();
 ENDSITEENTRY;
 
@@ -1240,6 +1427,8 @@ if (file_put_contents($site_entry_file, $site_entry)) {
 } else {
     echo "<div class='error'>❌ Failed to create site entry point</div>";
 }
+
+echo "<h3>8. How to Add to Your Menu</h3>";
 
 echo "<h3>8. Creating Menu Item Type XML</h3>";
 
