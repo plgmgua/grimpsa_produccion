@@ -1209,7 +1209,59 @@ echo "<div class='info'>
     </ul>
 </div>";
 
-echo "<h3>7. Creating Menu Item Type</h3>";
+echo "<h3>7. Creating Menu Item Type XML</h3>";
+
+// Create menu item type XML for Joomla's menu manager
+$menu_xml = <<<'ENDMENUXML'
+<?xml version="1.0" encoding="utf-8"?>
+<metadata>
+    <layout title="Work Orders List">
+        <message>
+            <![CDATA[COM_PRODUCCION_ORDENES_VIEW_DEFAULT_DESC]]>
+        </message>
+    </layout>
+    <fields name="request">
+        <fieldset name="request">
+            <field
+                name="id"
+                type="text"
+                label="Order ID"
+                description="Specific order ID to display"
+            />
+        </fieldset>
+    </fields>
+</metadata>
+ENDMENUXML;
+
+$menu_xml_file = $site_path . '/tmpl/ordenes/default.xml';
+
+if (file_put_contents($menu_xml_file, $menu_xml)) {
+    echo "<div class='success'>✅ Created menu item type XML</div>";
+} else {
+    echo "<div class='error'>❌ Failed to create menu XML</div>";
+}
+
+// Create site manifest with menu item types
+$site_manifest = <<<'ENDSITEMANIFEST'
+<?xml version="1.0" encoding="utf-8"?>
+<extension type="component" client="site">
+    <name>com_produccion</name>
+    <views>
+        <view name="ordenes" title="Work Orders List" />
+        <view name="orden" title="Work Order Details" />
+    </views>
+</extension>
+ENDSITEMANIFEST;
+
+$site_manifest_file = $site_path . '/produccion.xml';
+
+if (file_put_contents($site_manifest_file, $site_manifest)) {
+    echo "<div class='success'>✅ Created site manifest</div>";
+} else {
+    echo "<div class='error'>❌ Failed to create site manifest</div>";
+}
+
+echo "<h3>8. Creating Menu Item Type</h3>";
 
 // Load Joomla configuration
 $config_file = $joomla_root . '/configuration.php';
