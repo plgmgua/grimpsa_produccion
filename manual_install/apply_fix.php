@@ -233,44 +233,210 @@ if (file_put_contents($controller_file, $webhook_controller)) {
     echo "<div class='error'>❌ Failed to create site webhook controller</div>";
 }
 
-echo "<h3>2. Creating Site Entry Point</h3>";
+echo "<h3>2. Creating Direct Webhook Endpoint</h3>";
 
-// Create site entry point that properly handles webhook routing
-$site_entry = '<?php
-defined(\'_JEXEC\') or die;
+// Create a direct webhook file that bypasses Joomla authentication
+$webhook_endpoint = '<?php
+/**
+ * Direct Webhook Endpoint - No Authentication Required
+ * URL: /webhook_produccion.php
+ */
+
+// Load Joomla framework
+define(\'_JEXEC\', 1);
+
+if (file_exists(dirname(__FILE__) . \'/defines.php\')) {
+    require_once dirname(__FILE__) . \'/defines.php\';
+}
+
+if (!defined(\'_JDEFINES\')) {
+    define(\'JPATH_BASE\', dirname(__FILE__));
+    require_once JPATH_BASE . \'/includes/defines.php\';
+}
+
+require_once JPATH_BASE . \'/includes/framework.php';
 
 use Joomla\\CMS\\Factory;
-use Joomla\\CMS\\MVC\\Controller\\BaseController;
 
-// Get the application
-$app = Factory::getApplication();
+// Create application
+$app = Factory::getApplication(\'site\');
 
-// Get the task
-$task = $app->input->getCmd(\'task\', \'\');
+// Set JSON response header
+header(\'Content-Type: application/json\');
 
-// If this is a webhook request, handle it directly without authentication
-if (strpos($task, \'webhook.receive\') !== false || strpos($task, \'webhook.\') !== false) {
-    // Create webhook controller
-    $controller = new Joomla\\Component\\Produccion\\Site\\Controller\\WebhookController();
+// Log file
+$logFile = JPATH_ADMINISTRATOR . \'/logs/webhook.log\';
+
+try {
+    // Get request data
+    $method = $_SERVER[\'REQUEST_METHOD\'];
+    $body = file_get_contents(\'php://input\');
+    $data = json_decode($body, true);
     
-    // Execute receive task
-    $controller->execute(\'receive\');
-    $controller->redirect();
+    if (!$data && $method === \'POST\') {
+        $data = $_POST;
+    }
     
-    $app->close();
-} else {
-    // Normal component routing
-    $controller = BaseController::getInstance(\'Produccion\');
-    $controller->execute($app->input->getCmd(\'task\'));
-    $controller->redirect();
-}';
-
-$site_entry_file = $site_path . '/produccion.php';
-if (file_put_contents($site_entry_file, $site_entry)) {
-    echo "<div class='success'>✅ Updated site entry point</div>";
-} else {
-    echo "<div class='error'>❌ Failed to update site entry point</div>";
+    // Get headers
+    $headers = [];
+    foreach ($_SERVER as $name => $value) {
+        if (substr($name, 0, 5) == \'HTTP_\') {
+            $headers[str_replace(\' \', \'-\', ucwords(strtolower(str_replace(\'_\', \' \', substr($name, 5)))))] = $value;
+        }
+    }
+    
+    // Log request
+    $logMessage = "\\n=== WEBHOOK REQUEST ===\\n";
+    $logMessage .= "Time: " . date(\'Y-m-d H:i:s\') . "\\n";
+    $logMessage .= "Method: " . $method . "\\n";
+    $logMessage .= "Headers: " . json_encode($headers) . "\\n";
+    $logMessage .= "Data: " . json_encode($data) . "\\n";
+    file_put_contents($logFile, $logMessage, FILE_APPEND | LOCK_EX);
+    
+    // Get database
+    $db = Factory::getDbo();
+    
+    // Process webhook data
+    if (!empty($data[\'orden_de_trabajo\'])) {
+        // Check if order exists
+        $query = $db->getQuery(true)
+            ->select(\'id\')
+            ->from($db->quoteName(\'#__produccion_ordenes\'))
+            ->where($db->quoteName(\'orden_de_trabajo\') . \' = \' . $db->quote($data[\'orden_de_trabajo\']));
+        
+        $db->setQuery($query);
+        $ordenId = $db->loadResult();
+        
+        if ($ordenId) {
+            // Update existing order
+            $updateFields = [];
+            
+            if (!empty($data[\'estado\'])) {
+                $updateFields[] = $db->quoteName(\'estado\') . \' = \' . $db->quote($data[\'estado\']);
+            }
+            
+            if (!empty($data[\'tipo_orden\'])) {
+                $updateFields[] = $db->quoteName(\'tipo_orden\') . \' = \' . $db->quote($data[\'tipo_orden\']);
+            }
+            
+            $updateFields[] = $db->quoteName(\'modified\') . \' = NOW()\';
+            
+            if (!empty($updateFields)) {
+                $query = $db->getQuery(true)
+                    ->update($db->quoteName(\'#__produccion_ordenes\'))
+                    ->set($updateFields)
+                    ->where($db->quoteName(\'id\') . \' = \' . (int)$ordenId);
+                
+                $db->setQuery($query);
+                $db->execute();
+            }
+        } else {
+            // Insert new order
+            $query = $db->getQuery(true)
+                ->insert($db->quoteName(\'#__produccion_ordenes\'))
+                ->columns([
+                    $db->quoteName(\'orden_de_trabajo\'),
+                    $db->quoteName(\'estado\'),
+                    $db->quoteName(\'tipo_orden\'),
+                    $db->quoteName(\'created_by\'),
+                    $db->quoteName(\'created\')
+                ])
+                ->values(
+                    $db->quote($data[\'orden_de_trabajo\']) . \', \' .
+                    $db->quote($data[\'estado\'] ?? \'nueva\') . \', \' .
+                    $db->quote($data[\'tipo_orden\'] ?? \'interna\') . \', \' .
+                    \'0, \' . // System user
+                    \'NOW()\'
+                );
+            
+            $db->setQuery($query);
+            $db->execute();
+            $ordenId = $db->insertid();
+        }
+        
+        // Process EAV data (info object)
+        if (!empty($data[\'info\']) && is_array($data[\'info\'])) {
+            foreach ($data[\'info\'] as $key => $value) {
+                // Check if attribute exists
+                $query = $db->getQuery(true)
+                    ->select(\'id\')
+                    ->from($db->quoteName(\'#__produccion_ordenes_info\'))
+                    ->where($db->quoteName(\'orden_id\') . \' = \' . (int)$ordenId)
+                    ->where($db->quoteName(\'attribute_key\') . \' = \' . $db->quote($key));
+                
+                $db->setQuery($query);
+                $attrId = $db->loadResult();
+                
+                if ($attrId) {
+                    // Update
+                    $query = $db->getQuery(true)
+                        ->update($db->quoteName(\'#__produccion_ordenes_info\'))
+                        ->set($db->quoteName(\'attribute_value\') . \' = \' . $db->quote($value))
+                        ->where($db->quoteName(\'id\') . \' = \' . (int)$attrId);
+                    
+                    $db->setQuery($query);
+                    $db->execute();
+                } else {
+                    // Insert
+                    $query = $db->getQuery(true)
+                        ->insert($db->quoteName(\'#__produccion_ordenes_info\'))
+                        ->columns([
+                            $db->quoteName(\'orden_id\'),
+                            $db->quoteName(\'attribute_key\'),
+                            $db->quoteName(\'attribute_value\')
+                        ])
+                        ->values(
+                            (int)$ordenId . \', \' .
+                            $db->quote($key) . \', \' .
+                            $db->quote($value)
+                        );
+                    
+                    $db->setQuery($query);
+                    $db->execute();
+                }
+            }
+        }
+        
+        // Log success
+        file_put_contents($logFile, "SUCCESS: Order ID: " . $ordenId . "\\n", FILE_APPEND | LOCK_EX);
+        
+        // Return success
+        echo json_encode([
+            \'status\' => \'success\',
+            \'message\' => \'Webhook processed successfully\',
+            \'orden_id\' => $ordenId,
+            \'orden_de_trabajo\' => $data[\'orden_de_trabajo\']
+        ]);
+    } else {
+        echo json_encode([
+            \'status\' => \'error\',
+            \'message\' => \'Missing orden_de_trabajo\',
+            \'received_data\' => $data
+        ]);
+    }
+    
+} catch (Exception $e) {
+    file_put_contents($logFile, "ERROR: " . $e->getMessage() . "\\n", FILE_APPEND | LOCK_EX);
+    
+    http_response_code(500);
+    echo json_encode([
+        \'status\' => \'error\',
+        \'message\' => $e->getMessage()
+    ]);
 }
+
+$app->close();
+?>';
+
+$webhook_file = $joomla_root . '/webhook_produccion.php';
+if (file_put_contents($webhook_file, $webhook_endpoint)) {
+    echo "<div class='success'>✅ Created direct webhook endpoint: webhook_produccion.php</div>";
+} else {
+    echo "<div class='error'>❌ Failed to create webhook endpoint</div>";
+}
+
+// Update the webhook URL variable
+$webhook_url = $server_url . '/webhook_produccion.php';
 
 echo "<h3>3. Creating Enhanced Webhook Template</h3>";
 
