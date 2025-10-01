@@ -111,20 +111,23 @@ try {
     // Get database directly without application
     $db = Joomla\CMS\Factory::getDbo();
     
-    // Generate orden_de_trabajo if not provided
+    // Generate orden_de_trabajo if not provided (5-digit format: 05468, 05469, etc.)
     if (empty($formData['orden_de_trabajo'])) {
-        // Auto-generate order number
+        // Get last order number from new table
         $query = $db->getQuery(true)
-            ->select('MAX(CAST(SUBSTRING(orden_de_trabajo, 4) AS UNSIGNED))')
-            ->from($db->quoteName('#__produccion_ordenes'))
-            ->where($db->quoteName('orden_de_trabajo') . ' LIKE ' . $db->quote('OT-%'));
+            ->select('MAX(CAST(orden_de_trabajo AS UNSIGNED))')
+            ->from($db->quoteName('joomla_produccion_ordenes'));
         
         $db->setQuery($query);
         $lastNumber = $db->loadResult();
+        
+        // Increment and pad to 5 digits
         $newNumber = ($lastNumber ? $lastNumber + 1 : 1);
-        $formData['orden_de_trabajo'] = 'OT-' . date('Y') . '-' . str_pad($newNumber, 4, '0', STR_PAD_LEFT);
+        $formData['orden_de_trabajo'] = str_pad($newNumber, 5, '0', STR_PAD_LEFT);
         
         logWebhook('Auto-generated orden_de_trabajo', [
+            'last_number' => $lastNumber,
+            'new_number' => $newNumber,
             'orden_de_trabajo' => $formData['orden_de_trabajo']
         ]);
     }
@@ -132,62 +135,114 @@ try {
     // Process the webhook
     if (!empty($formData['orden_de_trabajo'])) {
         
-        // Check if order exists
+        // Check if order exists in new table
         $query = $db->getQuery(true)
-            ->select('id')
-            ->from($db->quoteName('#__produccion_ordenes'))
+            ->select('orden_de_trabajo')
+            ->from($db->quoteName('joomla_produccion_ordenes'))
             ->where($db->quoteName('orden_de_trabajo') . ' = ' . $db->quote($formData['orden_de_trabajo']));
         
         $db->setQuery($query);
-        $ordenId = $db->loadResult();
+        $existingOrder = $db->loadResult();
         
-        if ($ordenId) {
+        // Map webhook fields to database columns
+        $fieldMapping = [
+            // Core fields
+            'orden_de_trabajo' => 'orden_de_trabajo',
+            'fecha_de_solicitud' => 'fecha_de_solicitud',
+            'fecha_entrega' => 'fecha_de_entrega',
+            'cliente' => 'nombre_del_cliente',
+            'nit' => 'nit',
+            'agente_de_ventas' => 'agente_de_ventas',
+            'descripcion_trabajo' => 'descripcion_de_trabajo',
+            'material' => 'material',
+            'medidas' => 'medidas_en_pulgadas',
+            'color_impresion' => 'color_de_impresion',
+            'tiro_retiro' => 'tiro_retiro',
+            'valor_factura' => 'valor_a_facturar',
+            'instrucciones' => 'observaciones_instrucciones_generales',
+            
+            // Finishing options
+            'corte' => 'corte',
+            'detalles_corte' => 'detalles_de_corte',
+            'blocado' => 'bloqueado',
+            'detalles_blocado' => 'detalles_de_bloqueado',
+            'doblado' => 'doblado',
+            'detalles_doblado' => 'detalles_de_doblado',
+            'laminado' => 'laminado',
+            'detalles_laminado' => 'detalles_de_laminado',
+            'lomo' => 'lomo',
+            'detalles_lomo' => 'detalles_de_lomo',
+            'numerado' => 'numerado',
+            'detalles_numerado' => 'detalles_de_numerado',
+            'pegado' => 'pegado',
+            'detalles_pegado' => 'detalles_de_pegado',
+            'sizado' => 'sizado',
+            'detalles_sizado' => 'detalles_de_sizado',
+            'engrapado' => 'engrapado',
+            'detalles_engrapado' => 'detalles_de_engrapado',
+            'troquel' => 'troquel',
+            'detalles_troquel' => 'detalles_de_troquel',
+            'barniz' => 'barniz',
+            'detalles_barniz' => 'descripcion_de_barniz',
+            'impresion_blanco' => 'impresion_en_blanco',
+            'detalles_impresion_blanco' => 'descripcion_de_acabado_en_blanco',
+            'despuntado' => 'despuntados',
+            'detalles_despuntado' => 'descripcion_de_despuntados',
+            'ojetes' => 'ojetes',
+            'detalles_ojetes' => 'descripcion_de_ojetes',
+            'perforado' => 'perforado',
+            'detalles_perforado' => 'descripcion_de_perforado'
+        ];
+        
+        // Build columns and values arrays
+        $columns = [];
+        $values = [];
+        
+        foreach ($fieldMapping as $webhookField => $dbColumn) {
+            if (isset($formData[$webhookField]) && $formData[$webhookField] !== '') {
+                $columns[] = $db->quoteName($dbColumn);
+                $values[] = $db->quote($formData[$webhookField]);
+            }
+        }
+        
+        // Handle array fields (cotizacion, arte)
+        if (!empty($formData['cotizacion']) && is_array($formData['cotizacion'])) {
+            $columns[] = $db->quoteName('adjuntar_cotizacion');
+            $values[] = $db->quote($formData['cotizacion'][0] ?? '');
+        }
+        
+        if (!empty($formData['arte']) && is_array($formData['arte'])) {
+            $columns[] = $db->quoteName('archivo_de_arte');
+            $values[] = $db->quote($formData['arte'][0] ?? '');
+        }
+        
+        // Add timestamp
+        $columns[] = $db->quoteName('marca_temporal');
+        $values[] = $db->quote(date('Y-m-d H:i:s'));
+        
+        if ($existingOrder) {
             // Update existing order
-            logWebhook('Updating existing order', ['orden_id' => $ordenId, 'orden_de_trabajo' => $formData['orden_de_trabajo']]);
+            logWebhook('Order already exists - skipping', [
+                'orden_de_trabajo' => $formData['orden_de_trabajo']
+            ]);
             
-            $updateFields = [];
-            
-            if (!empty($formData['estado'])) {
-                $updateFields[] = $db->quoteName('estado') . ' = ' . $db->quote($formData['estado']);
-            }
-            
-            if (!empty($formData['tipo_orden'])) {
-                $updateFields[] = $db->quoteName('tipo_orden') . ' = ' . $db->quote($formData['tipo_orden']);
-            }
-            
-            $updateFields[] = $db->quoteName('modified') . ' = NOW()';
-            
-            if (!empty($updateFields)) {
-                $query = $db->getQuery(true)
-                    ->update($db->quoteName('#__produccion_ordenes'))
-                    ->set($updateFields)
-                    ->where($db->quoteName('id') . ' = ' . (int)$ordenId);
-                
-                $db->setQuery($query);
-                $db->execute();
-            }
+            $ordenId = $formData['orden_de_trabajo'];
         } else {
-            // Create new order
-            logWebhook('Creating new order', ['orden_de_trabajo' => $formData['orden_de_trabajo']]);
+            // Insert new order
+            logWebhook('Creating new order', [
+                'orden_de_trabajo' => $formData['orden_de_trabajo'],
+                'columns_count' => count($columns)
+            ]);
             
             $query = $db->getQuery(true)
-                ->insert($db->quoteName('#__produccion_ordenes'))
-                ->columns([
-                    $db->quoteName('orden_de_trabajo'),
-                    $db->quoteName('estado'),
-                    $db->quoteName('tipo_orden'),
-                    $db->quoteName('created_by')
-                ])
-                ->values(
-                    $db->quote($formData['orden_de_trabajo']) . ', ' .
-                    $db->quote($formData['estado'] ?? 'nueva') . ', ' .
-                    $db->quote($formData['tipo_orden'] ?? 'interna') . ', ' .
-                    '0'
-                );
+                ->insert($db->quoteName('joomla_produccion_ordenes'))
+                ->columns($columns)
+                ->values(implode(', ', $values));
             
             $db->setQuery($query);
             $db->execute();
-            $ordenId = $db->insertid();
+            
+            $ordenId = $formData['orden_de_trabajo'];
         }
         
         // Log all form data fields received
